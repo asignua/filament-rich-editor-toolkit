@@ -1,0 +1,51 @@
+/*
+ * Sticky RichEditor toolbar (asignua/filament-rich-editor-toolkit).
+ *
+ * Hand-written, no build step: the toolbar is made sticky for EVERY rich editor in the panel,
+ * not only those that call ->stickyToolbar(), and the offset is taken from
+ * --asignua-rte-sticky-offset when the plugin sets one, otherwise from Filament's own variable
+ * (which already knows about the sticky topbar and, in a modal, its sticky header).
+ *
+ * Ordinary CSS: no @layer, no preflight, no utilities. Selectors are single-class-deep on
+ * purpose so a host stylesheet can override them.
+ */
+
+.fi-fo-rich-editor .fi-fo-rich-editor-toolbar {
+    position: sticky;
+    top: var(
+        --asignua-rte-sticky-offset,
+        var(--fi-fo-rich-editor-sticky-offset, var(--fi-fo-rich-editor-modal-header-height, 0px))
+    );
+    z-index: var(--asignua-rte-sticky-z, 5);
+    background-color: var(--asignua-rte-toolbar-bg, #fff);
+    border-top-left-radius: var(--radius-lg, 0.5rem);
+    border-top-right-radius: var(--radius-lg, 0.5rem);
+}
+
+.dark .fi-fo-rich-editor .fi-fo-rich-editor-toolbar {
+    background-color: var(--asignua-rte-toolbar-bg-dark, #18181b);
+}
+
+/* Filament lifts the toolbar while a dropdown is open; keep that working. */
+.fi-fo-rich-editor .fi-fo-rich-editor-toolbar:has(.fi-fo-rich-editor-dropdown-tool-trigger[aria-expanded='true']) {
+    z-index: calc(var(--asignua-rte-sticky-z, 5) + 15);
+}
+
+/*
+ * `position: sticky` stops working as soon as an ancestor is a scroll container, and sections,
+ * tabs and repeater items clip their content with `overflow: hidden`. `overflow: clip` clips
+ * the same way but does not create a scroll container, so the toolbar can stick again.
+ * Modals are left alone: they scroll on their own and Filament measures their header.
+ */
+:is(.fi-section, .fi-section-content-ctn, .fi-sc-tabs, .fi-sc-tabs-tab, .fi-fo-repeater-item, .fi-fo-builder-item):has(.fi-fo-rich-editor):not(.fi-modal *) {
+    overflow: clip;
+}
+
+/*
+ * Per-field opt-out: RichEditor::make()->withoutStickyToolbar() (or any ancestor-or-self
+ * carrying data-toolkit-sticky="off"). Beats Filament's native ->stickyToolbar() too.
+ */
+[data-toolkit-sticky='off'] .fi-fo-rich-editor-toolbar.fi-fo-rich-editor-toolbar {
+    position: relative;
+    top: auto;
+}
