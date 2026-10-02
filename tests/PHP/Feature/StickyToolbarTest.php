@@ -59,5 +59,15 @@ class StickyToolbarTest extends TestCase
 
         $css = (string) file_get_contents(__DIR__.'/../../../resources/dist/filament-rich-editor-toolkit.css');
         $this->assertStringContainsString("[data-toolkit-sticky='off']", $css);
+        // A container whose editors all opted out keeps its own overflow.
+        $this->assertStringContainsString(":has(.fi-fo-rich-editor-toolbar:not([data-toolkit-sticky='off'] *))", $css);
+    }
+
+    public function test_the_toolbar_background_follows_the_panel_theme(): void
+    {
+        $css = (string) file_get_contents(__DIR__.'/../../../resources/dist/filament-rich-editor-toolkit.css');
+
+        $this->assertStringContainsString('var(--color-white', $css);
+        $this->assertStringContainsString('var(--gray-900', $css);
     }
 }

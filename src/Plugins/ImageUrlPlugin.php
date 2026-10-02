@@ -25,7 +25,10 @@ use Tiptap\Core\Extension;
  * image nodes look only at images that carry one.
  *
  * Only absolute http(s) URLs are accepted: a path or a protocol-relative URL would be resolved
- * against whatever host renders the content. Restrict the sources with {@see self::hosts()}.
+ * against whatever host renders the content. {@see self::hosts()} limits what the DIALOG
+ * accepts; it is not a content filter: an `<img>` typed in the source view, pasted, or posted
+ * as JSON is never checked against it. `http://` is accepted and is mixed content on an https
+ * site.
  *
  * List `imageUrl` in the editor's toolbar buttons to show the button. No server half: the
  * stock image node already renders it.
@@ -41,7 +44,8 @@ class ImageUrlPlugin implements RichContentPlugin
     }
 
     /**
-     * Allow only these hosts (exact, case-insensitive). Default: any host.
+     * Allow only these hosts in the dialog (exact, case-insensitive). Default: any host. The
+     * stored content is not filtered by it.
      *
      * @param list<string> $hosts
      */

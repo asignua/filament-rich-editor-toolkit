@@ -33,18 +33,13 @@ use Tiptap\Core\Extension;
  *
  * Like {@see CustomAttributesPlugin}, this plugin has a server half and MUST be in the
  * front-end renderer too ({@see RichEditorToolkit::renderer()}): without it tiptap-php drops
- * the tag. The renderer keeps only iframes whose `src` passes {@see EmbedSource}.
+ * the tag. The renderer keeps only iframes whose `src` passes {@see EmbedSource}, and only the
+ * toolkit's sanitizer lets `<iframe>` through: Filament's shared one is left untouched.
  *
  * List `embed` in the editor's toolbar buttons to show the button.
  */
 class EmbedPlugin implements RichContentPlugin
 {
-    public function __construct()
-    {
-        // The sanitizer must let <iframe> through, but only where this plugin is in use.
-        RichEditorToolkit::allowEmbeds();
-    }
-
     public static function make(): static
     {
         return app(static::class);
@@ -139,7 +134,7 @@ class EmbedPlugin implements RichContentPlugin
         $video = VideoEmbed::parse($input);
 
         if ($video !== null) {
-            return EmbedIframe::attributes($video['provider'], $video['id'], $video['start']);
+            return EmbedIframe::attributes($video['provider'], $video['id'], $video['start'], $video['hash']);
         }
 
         return EmbedSource::allows($input) ? EmbedIframe::genericAttributes($input) : null;

@@ -31,7 +31,18 @@ class VideoEmbedTest extends TestCase
     #[DataProvider('valid')]
     public function test_it_recognises_a_link(string $url, string $provider, string $id, ?int $start): void
     {
-        $this->assertSame(['provider' => $provider, 'id' => $id, 'start' => $start], VideoEmbed::parse($url));
+        $this->assertSame(['provider' => $provider, 'id' => $id, 'start' => $start, 'hash' => null], VideoEmbed::parse($url));
+    }
+
+    public function test_an_unlisted_vimeo_link_keeps_its_privacy_hash(): void
+    {
+        $this->assertSame('abcdef1234', VideoEmbed::parse('https://vimeo.com/123456789/abcdef1234')['hash'] ?? null);
+        $this->assertSame('abcdef1234', VideoEmbed::parse('https://player.vimeo.com/video/123456789?h=abcdef1234')['hash'] ?? null);
+        $this->assertNull(VideoEmbed::parse('https://player.vimeo.com/video/123456789?h=<script>')['hash'] ?? null);
+
+        $this->assertSame('https://player.vimeo.com/video/123456?h=abcdef1234', VideoEmbed::embedUrl('vimeo', '123456', hash: 'abcdef1234'));
+        $this->assertSame('https://player.vimeo.com/video/123456?h=abcdef1234#t=7s', VideoEmbed::embedUrl('vimeo', '123456', 7, hash: 'abcdef1234'));
+        $this->assertSame('https://player.vimeo.com/video/123456', VideoEmbed::embedUrl('vimeo', '123456', hash: 'not a hash'));
     }
 
     /**

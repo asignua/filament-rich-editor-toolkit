@@ -10,15 +10,33 @@
 
 import { readList } from './config.js'
 
+// A prefix matches on a segment boundary only: `maps/embed` accepts `/maps/embed` and
+// `/maps/embed/x`, never `/maps/embedded`.
+const pathMatches = (path, entryPath) => {
+    if (entryPath === '' || path === entryPath) {
+        return true
+    }
+
+    return path.startsWith(entryPath.endsWith('/') ? entryPath : `${entryPath}/`)
+}
+
 /**
  * @param {string} src
  * @param {string[]} entries allow-list entries
  */
 export const isAllowedSrc = (src, entries) => {
+    const raw = String(src || '').trim()
     let url
 
+    // `URL` normalises the path (`/embed/../../url` becomes `/url`), the PHP side compares it
+    // raw. Refuse what a browser would rewrite (dot segments, encoded dots and slashes,
+    // backslashes) so both sides give the same answer.
+    if (/(^|\/)\.\.?(\/|$)|%2e|%2f|%5c|\\/i.test(raw.split(/[?#]/)[0].replace(/^[a-z]+:\/\//i, ''))) {
+        return false
+    }
+
     try {
-        url = new URL(String(src || '').trim())
+        url = new URL(raw)
     } catch {
         return false
     }
@@ -34,7 +52,7 @@ export const isAllowedSrc = (src, entries) => {
         const entryHost = (slash === -1 ? entry : entry.slice(0, slash)).toLowerCase()
         const entryPath = slash === -1 ? '' : entry.slice(slash)
 
-        return host === entryHost && (entryPath === '' || url.pathname.startsWith(entryPath))
+        return host === entryHost && pathMatches(url.pathname, entryPath)
     })
 }
 

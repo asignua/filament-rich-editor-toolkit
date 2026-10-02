@@ -17,13 +17,13 @@
         var(--fi-fo-rich-editor-sticky-offset, var(--fi-fo-rich-editor-modal-header-height, 0px))
     );
     z-index: var(--asignua-rte-sticky-z, 5);
-    background-color: var(--asignua-rte-toolbar-bg, #fff);
+    background-color: var(--asignua-rte-toolbar-bg, var(--color-white, #fff));
     border-top-left-radius: var(--radius-lg, 0.5rem);
     border-top-right-radius: var(--radius-lg, 0.5rem);
 }
 
 .dark .fi-fo-rich-editor .fi-fo-rich-editor-toolbar {
-    background-color: var(--asignua-rte-toolbar-bg-dark, #18181b);
+    background-color: var(--asignua-rte-toolbar-bg-dark, var(--gray-900, #18181b));
 }
 
 /* Filament lifts the toolbar while a dropdown is open; keep that working. */
@@ -35,9 +35,10 @@
  * `position: sticky` stops working as soon as an ancestor is a scroll container, and sections,
  * tabs and repeater items clip their content with `overflow: hidden`. `overflow: clip` clips
  * the same way but does not create a scroll container, so the toolbar can stick again.
- * Modals are left alone: they scroll on their own and Filament measures their header.
+ * Modals are left alone: they scroll on their own and Filament measures their header. So is a
+ * container whose every editor opted out (withoutStickyToolbar()): it keeps its own overflow.
  */
-:is(.fi-section, .fi-section-content-ctn, .fi-sc-tabs, .fi-sc-tabs-tab, .fi-fo-repeater-item, .fi-fo-builder-item):has(.fi-fo-rich-editor):not(.fi-modal *) {
+:is(.fi-section, .fi-section-content-ctn, .fi-sc-tabs, .fi-sc-tabs-tab, .fi-fo-repeater-item, .fi-fo-builder-item):has(.fi-fo-rich-editor-toolbar:not([data-toolkit-sticky='off'] *)):not(.fi-modal *) {
     overflow: clip;
 }
 

@@ -6,15 +6,17 @@ namespace Asignua\RichEditorToolkit\Tests\Feature;
 
 use Asignua\RichEditorToolkit\Assets;
 use Asignua\RichEditorToolkit\Extensions\CustomAttributes;
+use Asignua\RichEditorToolkit\Extensions\CustomDivInline;
 use Asignua\RichEditorToolkit\Extensions\IframeNode;
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
-use Asignua\RichEditorToolkit\RichEditorToolkit;
 use Asignua\RichEditorToolkit\Tests\TestCase;
+use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\RichEditor\Plugins\Contracts\RichContentPlugin;
 use Livewire\Livewire;
+use ReflectionClassConstant;
 use Workbench\App\Livewire\DemoForm;
 
 class PluginsTest extends TestCase
@@ -73,6 +75,19 @@ class PluginsTest extends TestCase
         $this->assertSame(CustomAttributes::TYPES, $names[1]);
     }
 
+    public function test_the_php_and_js_owned_classes_styles_and_block_tags_agree(): void
+    {
+        $js = (string) file_get_contents(__DIR__.'/../../../resources/js/src/custom-attributes.js');
+
+        foreach (['OWNED_CLASSES' => [CustomAttributes::class, 'OWNED_CLASSES'], 'OWNED_STYLES' => [CustomAttributes::class, 'OWNED_STYLES'], 'BLOCK_TAGS' => [CustomDivInline::class, 'BLOCK_TAGS']] as $name => [$class, $constant]) {
+            $this->assertSame(1, preg_match('/export const '.$name.' =\s*(.*?)(?:\]|\n\n)/s', $js, $match), $name);
+            preg_match_all('/[-a-z0-9]+/', (string) preg_replace("/'\s*\+\s*'/", ',', $match[1]), $values);
+
+            $reflection = new ReflectionClassConstant($class, $constant);
+            $this->assertSame($reflection->getValue(), $values[0], $name);
+        }
+    }
+
     public function test_embed_plugin_ships_the_iframe_node_and_passes_the_allow_list_to_the_module(): void
     {
         $plugin = EmbedPlugin::make();
@@ -115,6 +130,15 @@ class PluginsTest extends TestCase
             $code = (string) file_get_contents(__DIR__.'/../../../resources/dist/'.$module.'.js');
 
             $this->assertMatchesRegularExpression('/export\s*\{[^}]*\bas default\b|export default/', $code, $module);
+
+            // Every `window.` must sit inside a function body: brace depth > 0 at that offset.
+            $offset = 0;
+
+            while (($position = strpos($code, 'window.', $offset)) !== false) {
+                $before = substr($code, 0, $position);
+                $this->assertGreaterThan(0, substr_count($before, '{') - substr_count($before, '}'), $module.': top-level window. at '.$position);
+                $offset = $position + 1;
+            }
         }
     }
 
@@ -137,12 +161,35 @@ class PluginsTest extends TestCase
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.image_url'), $html);
     }
 
-    public function test_the_embed_plugin_switches_the_sanitizer_on_only_when_used(): void
+    public function test_the_embed_modal_inserts_a_rebuilt_iframe_node_and_rejects_a_foreign_host(): void
     {
-        $this->assertStringNotContainsString('<iframe', \Filament\Forms\Components\RichEditor\RichContentRenderer::make('<iframe src="https://player.vimeo.com/video/1"></iframe>')->toHtml());
+        $this->actingAs(\Workbench\App\Models\User::factory()->create());
 
-        EmbedPlugin::make();
+        Livewire::test(DemoForm::class)
+            ->callAction(TestAction::make('embed')->schemaComponent('body'), ['url' => 'https://youtu.be/dQw4w9WgXcQ?t=90'])
+            ->assertHasNoFormErrors()
+            ->assertDispatched('run-rich-editor-commands', function (string $event, array $params): bool {
+                $node = $params['commands'][0]['arguments'][0] ?? null;
 
-        $this->assertTrue(str_contains(RichEditorToolkit::renderer('<iframe src="https://player.vimeo.com/video/123456"></iframe>')->toHtml(), '<iframe'));
+                return ($node['type'] ?? null) === 'iframe'
+                    && ($node['attrs']['src'] ?? null) === 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&start=90';
+            });
+
+        Livewire::test(DemoForm::class)
+            ->callAction(TestAction::make('embed')->schemaComponent('body'), ['url' => 'https://evil.test/x'])
+            ->assertNotDispatched('run-rich-editor-commands');
+    }
+
+    public function test_the_image_url_modal_inserts_an_image_node_and_rejects_a_relative_path(): void
+    {
+        $this->actingAs(\Workbench\App\Models\User::factory()->create());
+
+        Livewire::test(DemoForm::class)
+            ->callAction(TestAction::make('imageUrl')->schemaComponent('body'), ['url' => 'https://cdn.test/a.png', 'alt' => 'A'])
+            ->assertDispatched('run-rich-editor-commands', fn (string $event, array $params): bool => ($params['commands'][0]['arguments'][0] ?? null) === ['type' => 'image', 'attrs' => ['src' => 'https://cdn.test/a.png', 'alt' => 'A']]);
+
+        Livewire::test(DemoForm::class)
+            ->callAction(TestAction::make('imageUrl')->schemaComponent('body'), ['url' => '/a.png'])
+            ->assertNotDispatched('run-rich-editor-commands');
     }
 }

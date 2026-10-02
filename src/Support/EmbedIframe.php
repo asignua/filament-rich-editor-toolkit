@@ -16,10 +16,10 @@ final class EmbedIframe
     /**
      * @return array<string, string>
      */
-    public static function attributes(string $provider, string $id, ?int $start = null): array
+    public static function attributes(string $provider, string $id, ?int $start = null, ?string $hash = null): array
     {
         return [
-            'src' => VideoEmbed::embedUrl($provider, $id, $start),
+            'src' => VideoEmbed::embedUrl($provider, $id, $start, hash: $hash),
             'width' => '560',
             'height' => '315',
             'title' => $provider === 'vimeo' ? 'Vimeo video' : 'YouTube video',
@@ -76,11 +76,14 @@ final class EmbedIframe
         return $attributes;
     }
 
-    public static function html(string $provider, string $id, ?int $start = null): string
+    /**
+     * @internal not used by the toolkit; may change without a major release
+     */
+    public static function html(string $provider, string $id, ?int $start = null, ?string $hash = null): string
     {
         $attributes = '';
 
-        foreach (self::attributes($provider, $id, $start) as $name => $value) {
+        foreach (self::attributes($provider, $id, $start, $hash) as $name => $value) {
             $attributes .= ' '.$name.'="'.htmlspecialchars($value, ENT_QUOTES | ENT_HTML5).'"';
         }
 
@@ -95,6 +98,8 @@ final class EmbedIframe
      * an opening tag with its own `</iframe>` — the body must not cross the next `<iframe`,
      * otherwise an unclosed map tag before a video would swallow the video's closing tag and
      * the map's `src` would be checked — and only then a bare opening tag without a pair.
+     *
+     * @internal not used by the toolkit; may change without a major release
      */
     public static function canonicalize(string $html): string
     {
@@ -113,7 +118,7 @@ final class EmbedIframe
 
                 return $video === null
                     ? $match[0]
-                    : self::html($video['provider'], $video['id'], $video['start']);
+                    : self::html($video['provider'], $video['id'], $video['start'], $video['hash']);
             },
             $html,
         );

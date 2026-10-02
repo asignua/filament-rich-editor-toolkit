@@ -19,6 +19,10 @@ use Tiptap\Utils\HTML;
  * to the public site as stored, and the check in the "Embed" modal cannot see what was pasted
  * from the clipboard or typed in the source view.
  *
+ * The same check runs AGAIN on render: JSON content (`RichEditor::json()`, an array handed to
+ * the renderer, the editor state posted through Livewire) never passes through parseHTML(),
+ * so a node built by hand could otherwise carry any `src`. A node that fails renders nothing.
+ *
  * The hardening attributes (`sandbox`, `allow`, `referrerpolicy`, `loading`, `allowfullscreen`)
  * are forced on render and override whatever the stored HTML carried.
  */
@@ -67,10 +71,16 @@ class IframeNode extends Node
     /**
      * @param array<string, mixed> $HTMLAttributes
      *
-     * @return array<int, mixed>
+     * @return array<int, mixed>|null
      */
-    public function renderHTML(mixed $node, array $HTMLAttributes = []): array
+    public function renderHTML(mixed $node, array $HTMLAttributes = []): ?array
     {
+        $src = is_object($node) && isset($node->attrs) && is_object($node->attrs) ? ($node->attrs->src ?? null) : null;
+
+        if (!is_string($src) || !EmbedSource::allows($src)) {
+            return null;
+        }
+
         return ['iframe', HTML::mergeAttributes(
             $this->options['HTMLAttributes'],
             $HTMLAttributes,

@@ -64,11 +64,26 @@ class CustomAttributes extends Extension
     ];
 
     /**
-     * Attribute names that are never accepted: script sinks and navigation.
+     * Attribute names that are never accepted: script sinks, URL-bearing attributes and
+     * navigation.
      *
      * @var list<string>
      */
-    public const array FORBIDDEN = ['href', 'src', 'srcdoc', 'action', 'formaction', 'xlink:href'];
+    public const array FORBIDDEN = [
+        'href', 'src', 'srcdoc', 'srcset', 'action', 'formaction', 'formtarget', 'xlink:href',
+        'ping', 'background', 'poster', 'lowsrc', 'dynsrc', 'codebase', 'data', 'is', 'xmlns',
+    ];
+
+    /**
+     * Prefixes that are never accepted: event handlers, and the directives of front-end
+     * frameworks that turn an attribute into code. Filament's own panel runs Alpine over the
+     * editor DOM (`x-data`, `x-html`, `x-on:click`...), and a front end may run htmx, Vue or
+     * Angular: an allowed `x-init` would be stored XSS against every admin opening the record.
+     * Names with `:` are refused as a whole for the same reason (`x-on:click`, `v-on:click`).
+     *
+     * @var list<string>
+     */
+    public const array FORBIDDEN_PREFIXES = ['on', 'x-', 'data-x-', 'hx-', 'data-hx-', 'v-', 'ng-', 'data-ng-', 'wire:', 'xmlns'];
 
     /**
      * Classes written by the extension that OWNS them: `TextColorExtension` adds `color`,
@@ -103,7 +118,12 @@ class CustomAttributes extends Extension
 
     /**
      * Normalises a configured list: valid attribute-name syntax, lower case, no script sinks,
-     * no `on*` handlers, no duplicates, `class`/`id`/`style` always first.
+     * no `on*` handlers or framework directives ({@see self::FORBIDDEN_PREFIXES}), no `:`,
+     * no duplicates, `class`/`id`/`style` always first.
+     *
+     * A deny-list is not a proof: list only what you need (`data-*`, `aria-*`, `role`,
+     * `title`, `lang`, `dir`), and remember that a `data-*` read by your own front-end script
+     * is as dangerous as that script makes it.
      *
      * @param array<mixed> $names
      *
@@ -120,9 +140,9 @@ class CustomAttributes extends Extension
 
             $name = strtolower(trim($name));
 
-            if (preg_match('/^[a-z][a-z0-9_.:-]*$/', $name) !== 1
-                || str_starts_with($name, 'on')
-                || in_array($name, self::FORBIDDEN, true)) {
+            if (preg_match('/^[a-z][a-z0-9_.-]*$/', $name) !== 1
+                || in_array($name, self::FORBIDDEN, true)
+                || array_filter(self::FORBIDDEN_PREFIXES, static fn (string $prefix): bool => str_starts_with($name, $prefix)) !== []) {
                 continue;
             }
 

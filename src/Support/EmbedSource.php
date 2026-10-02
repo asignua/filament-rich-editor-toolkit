@@ -14,6 +14,12 @@ namespace Asignua\RichEditorToolkit\Support;
  *
  * Entries are `host` or `host/path/prefix`; https only, no credentials in the URL, exact host
  * match (never a suffix match: `player.vimeo.com.evil.test` must fail).
+ *
+ * The path is compared RAW, so anything a browser would rewrite before requesting it is
+ * refused outright: dot segments (`/maps/embed/../../url` resolves to `/url`, an open
+ * redirect on google.com), their encoded forms (`%2e`), encoded slashes and backslashes. A
+ * prefix matches on a segment boundary only: `maps/embed` accepts `/maps/embed`,
+ * `/maps/embed/x` and `/maps/embed?pb=…`, never `/maps/embedded`.
  */
 final class EmbedSource
 {
@@ -53,7 +59,7 @@ final class EmbedSource
         $parts = parse_url($src);
 
         if ($parts === false
-            || ($parts['scheme'] ?? '') !== 'https'
+            || strtolower($parts['scheme'] ?? '') !== 'https'
             || isset($parts['user']) || isset($parts['pass'])
             || !isset($parts['host'])) {
             return false;
@@ -62,17 +68,36 @@ final class EmbedSource
         $host = strtolower($parts['host']);
         $path = $parts['path'] ?? '/';
 
+        if (preg_match('~(^|/)\.\.?(/|$)|%2e|%2f|%5c|\\\\~i', $path) === 1) {
+            return false;
+        }
+
         foreach (self::entries() as $entry) {
             $slash = strpos($entry, '/');
             $entryHost = $slash === false ? $entry : substr($entry, 0, $slash);
             $entryPath = $slash === false ? '' : substr($entry, $slash);
 
-            if ($host === $entryHost && ($entryPath === '' || str_starts_with($path, $entryPath))) {
+            if ($host === $entryHost && self::pathMatches($path, $entryPath)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * `''` matches every path; an entry ending in `/` is a directory prefix; any other entry
+     * matches itself exactly or as a parent segment.
+     */
+    private static function pathMatches(string $path, string $entryPath): bool
+    {
+        if ($entryPath === '' || $path === $entryPath) {
+            return true;
+        }
+
+        $prefix = str_ends_with($entryPath, '/') ? $entryPath : $entryPath.'/';
+
+        return str_starts_with($path, $prefix);
     }
 
     private static function isWellFormedEntry(string $entry): bool

@@ -14,7 +14,10 @@ namespace Asignua\RichEditorToolkit\Support;
 final class VideoEmbed
 {
     /**
-     * @return array{provider: string, id: string, start: ?int}|null
+     * `hash` is the privacy hash of an unlisted Vimeo video (`vimeo.com/123/abcdef` or
+     * `?h=abcdef`): without it the player answers "video not available".
+     *
+     * @return array{provider: string, id: string, start: ?int, hash: ?string}|null
      */
     public static function parse(?string $url): ?array
     {
@@ -33,12 +36,18 @@ final class VideoEmbed
         // boundaries.
         $youtube = '~^(?:https?://)?(?:www\.|m\.)?youtube(?:-nocookie)?\.com/(?:watch\?(?:[^#]*&)?v=|embed/|shorts/|live/|v/)([A-Za-z0-9_-]{6,20})(?![A-Za-z0-9_-])~i';
         $youtubeShort = '~^(?:https?://)?(?:www\.)?youtu\.be/([A-Za-z0-9_-]{6,20})(?![A-Za-z0-9_-])~i';
-        $vimeo = '~^(?:https?://)?(?:www\.)?vimeo\.com/(?:video/)?(\d{6,12})(?![A-Za-z0-9_-])~i';
+        $vimeo = '~^(?:https?://)?(?:www\.)?vimeo\.com/(?:video/)?(\d{6,12})(?:/([0-9a-f]{6,20}))?(?![A-Za-z0-9_-])~i';
         $vimeoPlayer = '~^(?:https?://)?player\.vimeo\.com/video/(\d{6,12})(?![A-Za-z0-9_-])~i';
 
         foreach ([[$youtube, 'youtube'], [$youtubeShort, 'youtube'], [$vimeo, 'vimeo'], [$vimeoPlayer, 'vimeo']] as [$pattern, $provider]) {
             if (preg_match($pattern, $url, $matches) === 1) {
-                return ['provider' => $provider, 'id' => $matches[1], 'start' => $start];
+                $hash = null;
+
+                if ($provider === 'vimeo') {
+                    $hash = ($matches[2] ?? '') !== '' ? strtolower($matches[2]) : self::queryHash($url);
+                }
+
+                return ['provider' => $provider, 'id' => $matches[1], 'start' => $start, 'hash' => $hash];
             }
         }
 
@@ -47,13 +56,18 @@ final class VideoEmbed
 
     /**
      * The iframe source. Autoplay is OFF by default (a plain embed must not start playing on
-     * page load); pass true for a click-to-play facade.
+     * page load); pass true for a click-to-play facade. `$hash` is the Vimeo privacy hash
+     * (ignored for YouTube).
      */
-    public static function embedUrl(string $provider, string $id, ?int $start = null, bool $autoplay = false): string
+    public static function embedUrl(string $provider, string $id, ?int $start = null, bool $autoplay = false, ?string $hash = null): string
     {
         $params = $autoplay ? ['autoplay' => '1'] : [];
 
         if ($provider === 'vimeo') {
+            if ($hash !== null && preg_match('/^[0-9a-f]{6,20}$/i', $hash) === 1) {
+                $params = ['h' => strtolower($hash)] + $params;
+            }
+
             $query = $params === [] ? '' : '?'.http_build_query($params);
             $fragment = $start !== null ? '#t='.$start.'s' : '';
 
@@ -72,6 +86,8 @@ final class VideoEmbed
 
     /**
      * The clip on the provider's own site — a fallback for a visitor without JS.
+     *
+     * @internal not used by the toolkit; may change without a major release
      */
     public static function watchUrl(string $provider, string $id, ?int $start = null): string
     {
@@ -85,6 +101,8 @@ final class VideoEmbed
     /**
      * Thumbnail candidates, best first: maxres does not exist for every clip (i.ytimg.com
      * answers 404), so the hqdefault fallback is required.
+     *
+     * @internal not used by the toolkit; may change without a major release
      *
      * @return list<string>
      */
@@ -102,6 +120,8 @@ final class VideoEmbed
 
     /**
      * Vimeo has no deterministic thumbnail URL — only oEmbed returns it.
+     *
+     * @internal not used by the toolkit; may change without a major release
      */
     public static function oembedUrl(string $provider, string $id): ?string
     {
@@ -110,6 +130,21 @@ final class VideoEmbed
         }
 
         return 'https://vimeo.com/api/oembed.json?url='.rawurlencode('https://vimeo.com/'.$id);
+    }
+
+    private static function queryHash(string $url): ?string
+    {
+        $query = parse_url($url, PHP_URL_QUERY);
+
+        if (!is_string($query) || $query === '') {
+            return null;
+        }
+
+        parse_str($query, $params);
+
+        $hash = $params['h'] ?? null;
+
+        return is_string($hash) && preg_match('/^[0-9a-f]{6,20}$/i', $hash) === 1 ? strtolower($hash) : null;
     }
 
     /**

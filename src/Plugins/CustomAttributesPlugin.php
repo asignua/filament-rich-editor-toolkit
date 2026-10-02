@@ -39,8 +39,11 @@ class CustomAttributesPlugin implements RichContentPlugin
     }
 
     /**
-     * Extra attribute names (beyond class/id/style) for THIS plugin instance. They are also
-     * let through the sanitizer.
+     * Attribute names (beyond class/id/style) for THIS plugin instance, replacing the config
+     * list. They exist only on this instance: a front-end request never builds the form, so
+     * pass the same list to the renderer, `RichEditorToolkit::renderer($html, attributes: [...])`,
+     * or the values are saved and then dropped on the page. For a list shared by every editor
+     * use the `attributes` config or {@see RichEditorToolkit::allowAttributes()} instead.
      *
      * @param list<string> $names
      */
@@ -48,13 +51,13 @@ class CustomAttributesPlugin implements RichContentPlugin
     {
         $this->attributes = CustomAttributes::sanitizeNames($names);
 
-        RichEditorToolkit::allowAttributes($this->attributes);
-
         return $this;
     }
 
     /**
-     * Extra node/mark types that should receive the attributes.
+     * Extra node/mark types that should receive the attributes, replacing the config list.
+     * Per instance like {@see self::attributes()}: pass the same list to
+     * `RichEditorToolkit::renderer($html, types: [...])`.
      *
      * @param list<string> $types
      */

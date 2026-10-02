@@ -34,6 +34,28 @@ class EmbedSupportTest extends TestCase
         $this->assertSame(['www.youtube-nocookie.com/embed/', 'player.vimeo.com/video/', 'www.google.com/maps/embed'], EmbedSource::entries());
     }
 
+    public function test_the_path_prefix_refuses_traversal_and_respects_segment_boundaries(): void
+    {
+        config()->set('rich-editor-toolkit.embed.hosts', ['www.google.com/maps/embed']);
+
+        $this->assertTrue(EmbedSource::allows('https://www.google.com/maps/embed'));
+        $this->assertTrue(EmbedSource::allows('https://www.google.com/maps/embed/v1/place?q=1'));
+        $this->assertTrue(EmbedSource::allows('HTTPS://www.google.com/maps/embed?pb=1'));
+
+        $this->assertFalse(EmbedSource::allows('https://www.google.com/maps/embedded-anything'));
+        $this->assertFalse(EmbedSource::allows('https://www.google.com/maps/embed/../../url?q=https://evil.test'));
+        $this->assertFalse(EmbedSource::allows('https://www.google.com/maps/embed/%2e%2e/%2E%2E/url'));
+        $this->assertFalse(EmbedSource::allows('https://www.google.com/maps/embed/..%2f..%2furl'));
+        $this->assertFalse(EmbedSource::allows('https://www.google.com/maps/embed/./x'));
+        $this->assertFalse(EmbedSource::allows('https://www.google.com/maps/embed\\..\\url'));
+        $this->assertFalse(EmbedSource::allows('https://www.youtube-nocookie.com/embed/../watch'));
+    }
+
+    public function test_the_plugin_keeps_the_vimeo_privacy_hash(): void
+    {
+        $this->assertSame('https://player.vimeo.com/video/123456789?h=abcdef1234', EmbedPlugin::attributesFor('https://vimeo.com/123456789/abcdef1234')['src'] ?? null);
+    }
+
     public function test_hardening_follows_the_config(): void
     {
         $hardening = EmbedIframe::hardening();

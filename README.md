@@ -94,7 +94,9 @@ name makes Filament throw, so list only the plugins you installed.
 
 On Ctrl+V the structure stays (paragraphs, headings, lists, tables, links, bold/italic/underline) and colours, font
 sizes, backgrounds and every `class`/`id`/`style` they carry disappear. A paste from **inside** an editor is never
-touched (the `data-pm-slice` cutoff), so it composes with `CustomAttributesPlugin`.
+touched (the `data-pm-slice` cutoff), so it composes with `CustomAttributesPlugin`. The marker is ProseMirror's, not
+the toolkit's: a paste copied from **any** ProseMirror/TipTap-based app (Confluence, GitLab, another CMS) skips the
+cleanup too and keeps its `class`/`style`.
 
 The `cleanFormat` button runs the same cleanup on the **selected** fragment of existing content. Unlike Filament's
 `clearFormatting` it keeps headings and lists (that one runs `clearNodes().unsetAllMarks()`). Custom blocks survive; to
@@ -120,14 +122,28 @@ details, grid, spans and generic `<div>` containers. It also stops legacy markup
 ```
 
 The list is explicit because Symfony's HTML sanitizer, which Filament runs over every rendered rich text, cannot allow
-`data-*` as a pattern. `on*`, `href`, `src`, `srcdoc`, `action` and `formaction` are never accepted.
+`data-*` as a pattern. `on*` handlers, URL attributes (`href`, `src`, `srcset`, `srcdoc`, `action`, `formaction`,
+`ping`, `poster`, ...), `is`, any name with `:` and framework directives (`x-*`, `hx-*`, `v-*`, `ng-*`, `wire:*`) are
+never accepted: the panel runs Alpine over the editor, so an allowed `x-init` would be stored XSS against every admin.
+That list is a backstop, not a whitelist; allow only what you need (`data-*`, `aria-*`, `role`, `title`).
+
+`->attributes([...])` / `->types([...])` on a plugin instance replace the config for that field only. A front-end request
+never builds the form, so pass the same lists to the renderer, or the values are saved and dropped on the page:
+
+```php
+CustomAttributesPlugin::make()->attributes(['data-track']);                      // the form
+RichEditorToolkit::renderer($post->body, attributes: ['data-track'])->toHtml();   // the page
+```
 
 ### EmbedPlugin
 
 The "Embed" button takes a YouTube / Vimeo link (including `youtu.be`, Shorts, timecodes) or an https address from your
 allow-list, and inserts a bare `<iframe>`. A video link is **rebuilt** from provider and id
-(`youtube-nocookie.com`, no autoplay), never copied. Pasted or hand-written iframes pass the same check at once in the
-browser and when the HTML is parsed on the server; an iframe from any other host does not exist as a node and is dropped.
+(`youtube-nocookie.com`, no autoplay; an unlisted Vimeo video keeps its privacy hash), never copied. Pasted or
+hand-written iframes pass the same check at once in the browser and when the HTML is parsed on the server; an iframe from
+any other host does not exist as a node and is dropped. The check runs again when a node is rendered, so JSON content
+(`RichEditor::json()`, an array handed to the renderer) cannot smuggle one in either. A `host/path` entry matches on a
+segment boundary, and a path with dot segments (`/maps/embed/../../url`), `%2e`, `%2f` or a backslash is refused.
 
 ```php
 'embed' => [
@@ -142,7 +158,9 @@ says.
 ### ImageUrlPlugin
 
 Inserts an `<img>` that is loaded from the other site, not copied. Only absolute http(s) URLs are accepted;
-`ImageUrlPlugin::make()->hosts(['cdn.example.com'])` restricts the sources.
+`ImageUrlPlugin::make()->hosts(['cdn.example.com'])` restricts what the **dialog** accepts. It is not a content filter:
+an `<img>` typed in the source view or pasted is not checked against it. `http://` is accepted (mixed content on an
+https site).
 
 ### StickyToolbarPlugin
 
@@ -170,18 +188,23 @@ what they do not know. Use the helper:
 {!! \Asignua\RichEditorToolkit\RichEditorToolkit::renderer($post->body)->toHtml() !!}
 ```
 
-or attach the plugins to a renderer you build yourself:
+or attach the plugins to a renderer you build yourself and render it through the toolkit:
 
 ```php
-RichContentRenderer::make($post->body)
+$renderer = RichContentRenderer::make($post->body)
     ->customBlocks([...])
     ->plugins(RichEditorToolkit::plugins());
+
+{!! RichEditorToolkit::toHtml($renderer) !!}
 ```
 
-This adds `CustomAttributesPlugin` and `EmbedPlugin` and extends Filament's sanitizer config (`class`/`style` are
-already allowed by Filament; the toolkit adds your attribute allow-list and, once `EmbedPlugin` is in use, `<iframe>`
-restricted to the allow-listed sources). **Do not add `PasteCleanPlugin` to the renderer**: the cleanup happens once, at
-paste time.
+This adds `CustomAttributesPlugin` and `EmbedPlugin` and sanitizes with the toolkit's **own** sanitizer: a copy of
+Filament's config plus your attribute allow-list and, when `EmbedPlugin` is attached, `<iframe>` whose `src` passes the
+embed allow-list. Filament's shared sanitizer is never changed, so `TextColumn::html()`, `TextEntry::html()`,
+notifications and the Markdown editor keep Filament's defaults. A renderer's own `toHtml()` uses that shared sanitizer,
+which is why `RichEditorToolkit::toHtml($renderer)` is needed (the same goes for `HasRichContent` models:
+`RichEditorToolkit::toHtml($post->getRichContentAttribute('body')->getRenderer())`). **Do not add `PasteCleanPlugin`
+to the renderer**: the cleanup happens once, at paste time.
 
 ## Configuration
 
@@ -196,8 +219,9 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
   Filament's loader. Nothing else fails, the plugin is just absent.
 - **Node types.** An attribute is kept only on the node types in the list (`Extensions\CustomAttributes::TYPES` plus the
   `types` config). The PHP and the JS lists are identical on purpose; a test pins it.
-- **The sanitizer is global.** Allowances apply to every `RichContentRenderer` in the app, not only to the toolkit's.
-  `<iframe>` is allowed only after `EmbedPlugin` is instantiated (or `RichEditorToolkit::allowEmbeds()` is called).
+- **The sanitizer is the toolkit's own.** Allowances apply only to `RichEditorToolkit::renderer()` and
+  `RichEditorToolkit::toHtml()`; a plain `RichContentRenderer::toHtml()` and every `->html()` column still drop
+  `<iframe>` and the extra attributes.
 - **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl` only when the matching plugin is registered.
 
 ## Translations

@@ -14,8 +14,11 @@ return [
     | rich text, has no wildcard for attribute names (`data-*` cannot be allowed), so each name
     | must be spelled out. `class`, `id` and `style` are always preserved.
     |
-    | Names that are never accepted, whatever you list: `on*` handlers, `href`, `src`,
-    | `srcdoc`, `action`, `formaction`, `xlink:href`.
+    | Names that are never accepted, whatever you list: `on*` handlers, URL attributes
+    | (`href`, `src`, `srcset`, `srcdoc`, `action`, `formaction`, `ping`, `poster`, ...), `is`,
+    | any name with `:`, and framework directives (`x-*`, `hx-*`, `v-*`, `ng-*`, `wire:*`): the
+    | panel runs Alpine over the editor. That list is a backstop, not a whitelist: allow only
+    | what you need (`data-*`, `aria-*`, `role`, `title`, `lang`, `dir`).
     |
     | `types` adds node/mark types to the built-in list (paragraph, heading, list, table,
     | image, link, ...). A type missing from the list loses the attributes silently.
@@ -37,7 +40,9 @@ return [
     |
     | EmbedPlugin accepts YouTube and Vimeo links out of the box (rewritten to the privacy
     | friendly youtube-nocookie.com / player.vimeo.com embed URLs). `hosts` allow further
-    | https iframe sources: `host` or `host/path/prefix`.
+    | https iframe sources: `host` or `host/path/prefix`. A prefix matches on a segment
+    | boundary (`maps/embed` never accepts `/maps/embedded`), and a path with dot segments,
+    | `%2e`, `%2f` or a backslash is refused.
     |
     | `sandbox` is forced onto every embed on render, whatever the stored HTML says. Set it to
     | null to emit no sandbox attribute (not recommended).

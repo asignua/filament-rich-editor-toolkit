@@ -107,6 +107,20 @@ test('isAllowedSrc: https only, exact host, optional path prefix', () => {
     assert.equal(isAllowedSrc('https://player.vimeo.com/video/1', []), false)
 })
 
+test('isAllowedSrc: refuses traversal and matches the prefix on a segment boundary (PHP parity)', () => {
+    const hosts = ['www.google.com/maps/embed']
+
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embed?pb=1', hosts), true)
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embed/v1/place', hosts), true)
+    assert.equal(isAllowedSrc('HTTPS://www.google.com/maps/embed', hosts), true)
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embedded', hosts), false)
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embed/../../url?q=https://evil.test', hosts), false)
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embed/%2e%2e/%2E%2E/url', hosts), false)
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embed/..%2f..%2furl', hosts), false)
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embed/./x', hosts), false)
+    assert.equal(isAllowedSrc('https://www.google.com/maps/embed\\..\\url', hosts), false)
+})
+
 test('the embed node rejects an iframe whose src is not allow-listed', () => {
     globalThis.window = { FilamentRichEditor: { tiptap: { core: { Node: { create: (c) => c } } } } }
 

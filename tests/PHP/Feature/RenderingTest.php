@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Asignua\RichEditorToolkit\Tests\Feature;
 
+use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
+use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\RichEditorToolkit;
 use Asignua\RichEditorToolkit\Tests\TestCase;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HtmlSanitizer\HtmlSanitizerInterface;
 
 class RenderingTest extends TestCase
 {
@@ -41,9 +46,15 @@ class RenderingTest extends TestCase
 
     public function test_dangerous_attribute_names_are_never_accepted_even_when_configured(): void
     {
-        config()->set('rich-editor-toolkit.attributes', ['onclick', 'href', 'srcdoc', 'data-ok']);
+        config()->set('rich-editor-toolkit.attributes', [
+            'onclick', 'href', 'srcdoc', 'data-ok',
+            // Framework directives and URL-bearing attributes.
+            'x-data', 'x-init', 'x-html', 'x-on:click', 'data-x-init', 'hx-get', 'data-hx-get', 'v-html', 'ng-click',
+            'wire:click', 'is', 'srcset', 'formtarget', 'ping', 'background', 'poster', 'xmlns', 'xmlns:xlink', 'xml:lang',
+            'aria-label', 'role',
+        ]);
 
-        $this->assertSame(['class', 'id', 'style', 'data-ok'], RichEditorToolkit::attributeNames());
+        $this->assertSame(['class', 'id', 'style', 'data-ok', 'aria-label', 'role'], RichEditorToolkit::attributeNames());
 
         $html = RichEditorToolkit::renderer('<p onclick="evil()" data-ok="1">Hi</p>')->toHtml();
 
@@ -78,8 +89,6 @@ class RenderingTest extends TestCase
 
     public function test_images_keep_their_src_after_the_sanitizer_extension(): void
     {
-        RichEditorToolkit::allowEmbeds();
-
         $html = RichEditorToolkit::renderer('<p><img src="https://a.test/a.png" width="10"></p>')->toHtml();
 
         $this->assertStringContainsString('src="https://a.test/a.png"', $html);
@@ -113,6 +122,107 @@ class RenderingTest extends TestCase
         ] as $source) {
             $this->assertStringNotContainsString('<iframe', RichEditorToolkit::renderer($source)->toHtml(), $source);
         }
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function disallowedSources(): array
+    {
+        return [
+            'foreign host' => ['https://evil.test/x'],
+            'data url' => ['data:text/html,<script>alert(1)</script>'],
+            'javascript' => ['javascript:alert(1)'],
+            'traversal out of the prefix' => ['https://www.youtube-nocookie.com/embed/../../redirect'],
+        ];
+    }
+
+    #[DataProvider('disallowedSources')]
+    public function test_json_content_cannot_smuggle_a_disallowed_iframe(string $src): void
+    {
+        $document = ['type' => 'doc', 'content' => [
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'before']]],
+            ['type' => 'iframe', 'attrs' => ['src' => $src, 'sandbox' => null]],
+        ]];
+
+        // The node itself renders nothing (no sanitizer involved)...
+        $unsafe = RichContentRenderer::make($document)->plugins(RichEditorToolkit::plugins())->toUnsafeHtml();
+        $this->assertStringNotContainsString('<iframe', $unsafe);
+        $this->assertStringContainsString('before', $unsafe);
+
+        // ...and neither does the full pipeline.
+        $this->assertStringNotContainsString('<iframe', RichEditorToolkit::renderer($document)->toHtml());
+    }
+
+    public function test_json_content_with_an_allowed_iframe_renders_hardened(): void
+    {
+        $html = RichEditorToolkit::renderer(['type' => 'doc', 'content' => [
+            ['type' => 'iframe', 'attrs' => ['src' => 'https://player.vimeo.com/video/123456']],
+        ]])->toHtml();
+
+        $this->assertStringContainsString('<iframe', $html);
+        $this->assertStringContainsString('sandbox="', $html);
+    }
+
+    public function test_the_toolkit_sanitizer_drops_an_iframe_src_outside_the_allow_list_whatever_produced_it(): void
+    {
+        $sanitizer = RichEditorToolkit::sanitizer();
+
+        $this->assertStringNotContainsString('evil.test', $sanitizer->sanitize('<iframe src="https://evil.test/x"></iframe>'));
+        $this->assertStringNotContainsString('data:', $sanitizer->sanitize('<iframe src="data:text/html,x"></iframe>'));
+        $this->assertStringContainsString('src="https://player.vimeo.com/video/123456"', $sanitizer->sanitize('<iframe src="https://player.vimeo.com/video/123456"></iframe>'));
+        $this->assertStringContainsString('src="https://a.test/a.png"', $sanitizer->sanitize('<img src="https://a.test/a.png">'));
+    }
+
+    public function test_filaments_shared_sanitizer_is_never_extended(): void
+    {
+        config()->set('rich-editor-toolkit.attributes', ['data-track']);
+        RichEditorToolkit::allowAttributes(['data-late']);
+
+        // Build everything that used to switch the global allowances on.
+        EmbedPlugin::make();
+        CustomAttributesPlugin::make()->attributes(['data-instance']);
+        RichEditorToolkit::renderer('<iframe src="https://player.vimeo.com/video/123456"></iframe>')->toHtml();
+
+        foreach ([
+            app(HtmlSanitizerInterface::class)->sanitize('<iframe src="https://player.vimeo.com/video/123456"></iframe><p data-track="1" data-late="1" data-instance="1">x</p>'),
+            Str::sanitizeHtml('<iframe src="https://evil.test/x" sandbox="allow-top-navigation"></iframe><p data-track="1">x</p>'),
+        ] as $html) {
+            $this->assertStringNotContainsString('<iframe', $html);
+            $this->assertStringNotContainsString('data-track', $html);
+            $this->assertStringNotContainsString('data-late', $html);
+            $this->assertStringNotContainsString('data-instance', $html);
+        }
+    }
+
+    public function test_a_renderer_without_the_embed_plugin_keeps_no_iframe(): void
+    {
+        $renderer = RichContentRenderer::make('<p data-track="1">x</p>')
+            ->plugins([CustomAttributesPlugin::make()->attributes(['data-track'])]);
+
+        $this->assertStringContainsString('data-track="1"', RichEditorToolkit::toHtml($renderer));
+        $this->assertStringNotContainsString('<iframe', RichEditorToolkit::sanitizer(embeds: false)->sanitize('<iframe src="https://player.vimeo.com/video/123456"></iframe>'));
+    }
+
+    public function test_per_instance_attributes_and_types_can_be_given_to_the_renderer(): void
+    {
+        // A fresh request: no form plugin was ever built, only the renderer.
+        $html = RichEditorToolkit::renderer('<p data-instance="1" data-other="2">x</p>', attributes: ['data-instance'])->toHtml();
+
+        $this->assertStringContainsString('data-instance="1"', $html);
+        $this->assertStringNotContainsString('data-other', $html);
+
+        $plugin = RichEditorToolkit::plugins(types: ['myNode'])[0];
+        $this->assertInstanceOf(CustomAttributesPlugin::class, $plugin);
+        $this->assertContains('myNode', $plugin->getTypes());
+    }
+
+    public function test_a_plugin_instance_list_does_not_leak_into_the_defaults(): void
+    {
+        CustomAttributesPlugin::make()->attributes(['data-instance']);
+
+        $this->assertNotContains('data-instance', RichEditorToolkit::attributeNames());
+        $this->assertStringNotContainsString('data-instance', RichEditorToolkit::renderer('<p data-instance="1">x</p>')->toHtml());
     }
 
     public function test_an_allow_listed_host_works_from_the_config(): void

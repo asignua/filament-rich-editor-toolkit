@@ -9,7 +9,6 @@ use Filament\Support\Assets\Css;
 use Filament\Support\Facades\FilamentAsset;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
-use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
 
 class RichEditorToolkitServiceProvider extends PackageServiceProvider
 {
@@ -20,17 +19,6 @@ class RichEditorToolkitServiceProvider extends PackageServiceProvider
         $package
             ->name(static::$name)
             ->hasConfigFile('rich-editor-toolkit');
-    }
-
-    public function packageRegistered(): void
-    {
-        // Filament sanitizes every rendered rich text (RichContentRenderer::toHtml()) and its
-        // default config drops `<iframe>` and every attribute but class/style/data-color/...
-        // The extender runs when the scoped config is first resolved, after boot().
-        $this->app->extend(
-            HtmlSanitizerConfig::class,
-            static fn (HtmlSanitizerConfig $config): HtmlSanitizerConfig => RichEditorToolkit::applySanitizerAllowances($config),
-        );
     }
 
     public function packageBooted(): void
