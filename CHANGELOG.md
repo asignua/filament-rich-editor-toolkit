@@ -2,7 +2,7 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
-## v1.0.0 - unreleased
+## v1.0.0 - 2026-10-03
 
 - `PasteCleanPlugin`: cleans a paste from Word / Google Docs (structure kept; colours, fonts, backgrounds, class/id/style dropped) and a "Clear formatting" toolbar button that keeps headings, lists, links and custom blocks. Configurable list of link prefixes the button must keep.
 - `CustomAttributesPlugin`: preserves `class`, `id`, `style` and an explicit allow-list of further attributes (`data-*`, `aria-*`, ...) in the browser schema and in the tiptap-php schema; keeps generic `<div>` containers, bare `<span>` and `<li><div>` structures.
