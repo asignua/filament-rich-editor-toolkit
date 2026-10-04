@@ -107,6 +107,13 @@ test('isAllowedSrc: https only, exact host, optional path prefix', () => {
     assert.equal(isAllowedSrc('https://player.vimeo.com/video/1', []), false)
 })
 
+test('isAllowedSrc: the entry host is case-insensitive, its path is not (PHP parity)', () => {
+    const hosts = ['Docs.Google.com/forms/d/e/1FAIpQLSfX/viewform']
+
+    assert.equal(isAllowedSrc('https://docs.google.com/forms/d/e/1FAIpQLSfX/viewform?embedded=true', hosts), true)
+    assert.equal(isAllowedSrc('https://docs.google.com/forms/d/e/1faipqlsfx/viewform', hosts), false)
+})
+
 test('isAllowedSrc: refuses traversal and matches the prefix on a segment boundary (PHP parity)', () => {
     const hosts = ['www.google.com/maps/embed']
 

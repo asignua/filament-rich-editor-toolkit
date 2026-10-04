@@ -34,6 +34,15 @@ class EmbedSupportTest extends TestCase
         $this->assertSame(['www.youtube-nocookie.com/embed/', 'player.vimeo.com/video/', 'www.google.com/maps/embed'], EmbedSource::entries());
     }
 
+    public function test_only_the_host_of_an_entry_is_lowercased_the_path_keeps_its_case(): void
+    {
+        config()->set('rich-editor-toolkit.embed.hosts', ['Docs.Google.com/forms/d/e/1FAIpQLSfX/viewform']);
+
+        $this->assertContains('docs.google.com/forms/d/e/1FAIpQLSfX/viewform', EmbedSource::entries());
+        $this->assertTrue(EmbedSource::allows('https://docs.google.com/forms/d/e/1FAIpQLSfX/viewform?embedded=true'));
+        $this->assertFalse(EmbedSource::allows('https://docs.google.com/forms/d/e/1faipqlsfx/viewform'), 'the path is case-sensitive');
+    }
+
     public function test_the_path_prefix_refuses_traversal_and_respects_segment_boundaries(): void
     {
         config()->set('rich-editor-toolkit.embed.hosts', ['www.google.com/maps/embed']);

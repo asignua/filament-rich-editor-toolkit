@@ -148,7 +148,7 @@ allow-list, and inserts a bare `<iframe>`. A video link is **rebuilt** from prov
 hand-written iframes pass the same check at once in the browser and when the HTML is parsed on the server; an iframe from
 any other host does not exist as a node and is dropped. The check runs again when a node is rendered, so JSON content
 (`RichEditor::json()`, an array handed to the renderer) cannot smuggle one in either. A `host/path` entry matches on a
-segment boundary, and a path with dot segments (`/maps/embed/../../url`), `%2e`, `%2f` or a backslash is refused.
+segment boundary (the host is case-insensitive, the path is not), and a path with dot segments (`/maps/embed/../../url`), `%2e`, `%2f` or a backslash is refused.
 
 ```php
 'embed' => [

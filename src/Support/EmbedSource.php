@@ -13,7 +13,8 @@ namespace Asignua\RichEditorToolkit\Support;
  * an iframe whose `src` fails it does not exist as a node and is dropped.
  *
  * Entries are `host` or `host/path/prefix`; https only, no credentials in the URL, exact host
- * match (never a suffix match: `player.vimeo.com.evil.test` must fail).
+ * match (never a suffix match: `player.vimeo.com.evil.test` must fail). The host is compared
+ * case-insensitively, the path case-sensitively, as browsers and servers treat them.
  *
  * The path is compared RAW, so anything a browser would rewrite before requesting it is
  * refused outright: dot segments (`/maps/embed/../../url` resolves to `/url`, an open
@@ -41,7 +42,7 @@ final class EmbedSource
 
         foreach ($configured as $entry) {
             if (is_string($entry) && self::isWellFormedEntry($entry)) {
-                $entries[] = strtolower(trim($entry));
+                $entries[] = self::normalizeEntry($entry);
             }
         }
 
@@ -98,6 +99,20 @@ final class EmbedSource
         $prefix = str_ends_with($entryPath, '/') ? $entryPath : $entryPath.'/';
 
         return str_starts_with($path, $prefix);
+    }
+
+    /**
+     * Host names are case-insensitive, URL paths are not (a Google Forms id is `1FAIpQL…`):
+     * only the part before the first `/` is lowercased.
+     */
+    private static function normalizeEntry(string $entry): string
+    {
+        $entry = trim($entry);
+        $slash = strpos($entry, '/');
+
+        return $slash === false
+            ? strtolower($entry)
+            : strtolower(substr($entry, 0, $slash)).substr($entry, $slash);
     }
 
     private static function isWellFormedEntry(string $entry): bool
