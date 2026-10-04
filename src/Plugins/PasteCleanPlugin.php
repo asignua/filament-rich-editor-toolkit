@@ -17,8 +17,8 @@ use Tiptap\Core\Extension;
  *
  * Plus the toolbar button `cleanFormat` ("Clear formatting", {@see self::getEditorTools()}):
  * the same cleanup on the SELECTED fragment of content that is already there, keeping what
- * should survive — headings, lists, links, custom blocks, and (via
- * `rich-editor-toolkit.paste_clean.keep_link_prefixes`) your sentinel links. With no selection
+ * should survive — headings, lists, links (relative, `#anchor` and `tel:` too; only script
+ * schemes go), custom blocks, embeds, images (also ones inserted by URL) and code blocks. With no selection
  * the button is a deliberate no-op. There is no dialog, so {@see self::getEditorActions()} is
  * empty. All the work is in `resources/js/src/paste-clean.js`: the paste goes through the
  * `transformPastedHTML` hook, the button through the TipTap command `asignuaCleanFormat`.
@@ -50,8 +50,10 @@ class PasteCleanPlugin implements RichContentPlugin
     }
 
     /**
-     * Link href prefixes the "Clear formatting" button keeps (e.g. `/internal-link/`).
-     * Defaults to the `paste_clean.keep_link_prefixes` config, which defaults to none.
+     * Link href prefixes the "Clear formatting" button keeps whatever their scheme. The button
+     * already keeps relative links (e.g. `/internal-link/`), so this is needed only for a
+     * prefix it would otherwise refuse. Defaults to the `paste_clean.keep_link_prefixes`
+     * config, which defaults to none.
      *
      * @param list<string> $prefixes
      */

@@ -64,9 +64,10 @@ return [
     | Paste cleanup
     |--------------------------------------------------------------------------
     |
-    | Link href prefixes that the "Clear formatting" button must NOT strip. Empty by default.
-    | Use it when your site stores links as a sentinel, e.g. `/internal-link/`; without it
-    | the button would turn such links into plain text.
+    | The "Clear formatting" button keeps every link already in the content (relative
+    | paths, `#anchors` and `tel:` included) except the script schemes `javascript:`,
+    | `vbscript:`, `data:` and `file:`. Href prefixes listed here are kept even then;
+    | a relative sentinel such as `/internal-link/` no longer needs to be listed.
     |
     */
 

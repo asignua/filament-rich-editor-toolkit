@@ -93,14 +93,17 @@ name makes Filament throw, so list only the plugins you installed.
 ### PasteCleanPlugin
 
 On Ctrl+V the structure stays (paragraphs, headings, lists, tables, links, bold/italic/underline) and colours, font
-sizes, backgrounds and every `class`/`id`/`style` they carry disappear. A paste from **inside** an editor is never
+sizes, backgrounds and every `class`/`id`/`style` they carry disappear. A pasted link keeps its `href` only for
+`http(s):`, `mailto:` and `tel:`; relative paths and `#anchors` (Word's `#_Toc…`, local file paths) become plain text. A paste from **inside** an editor is never
 touched (the `data-pm-slice` cutoff), so it composes with `CustomAttributesPlugin`. The marker is ProseMirror's, not
 the toolkit's: a paste copied from **any** ProseMirror/TipTap-based app (Confluence, GitLab, another CMS) skips the
 cleanup too and keeps its `class`/`style`.
 
 The `cleanFormat` button runs the same cleanup on the **selected** fragment of existing content. Unlike Filament's
-`clearFormatting` it keeps headings and lists (that one runs `clearNodes().unsetAllMarks()`). Custom blocks survive; to
-keep your own sentinel links, list their prefixes:
+`clearFormatting` it keeps headings and lists (that one runs `clearNodes().unsetAllMarks()`). What the editor itself
+put there survives untouched: custom blocks, embeds (`<iframe>`), images (also ones inserted by URL or stored on another
+host) and code blocks. Every link stays too (relative paths, `#anchors`, `tel:`), except the script schemes
+`javascript:`, `vbscript:`, `data:` and `file:`. A prefix you list is kept whatever its scheme:
 
 ```php
 PasteCleanPlugin::make()->keepLinkPrefixes(['/internal-link/'])

@@ -2,6 +2,11 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
+## Unreleased
+
+- `PasteCleanPlugin`: the "Clear formatting" button no longer destroys nodes the editor itself produced. Embeds (`<iframe>` from `EmbedPlugin`), images (also `ImageUrlPlugin` images and images on another host) and code blocks in the selection are kept as they are; before, the iframe was dropped, the image removed by the clipboard image triage and a code block flattened into one paragraph.
+- `PasteCleanPlugin`: the button keeps every link of existing content (relative paths, `#anchors`, `tel:`) and refuses only `javascript:`, `vbscript:`, `data:` and `file:`; `keepLinkPrefixes()` is no longer needed for relative sentinels. A paste now keeps `tel:` links as well; relative and `#` links in a paste are still turned into text.
+
 ## v1.0.0 - 2026-10-03
 
 - `PasteCleanPlugin`: cleans a paste from Word / Google Docs (structure kept; colours, fonts, backgrounds, class/id/style dropped) and a "Clear formatting" toolbar button that keeps headings, lists, links and custom blocks. Configurable list of link prefixes the button must keep.

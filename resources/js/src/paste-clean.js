@@ -24,8 +24,9 @@
 //
 // The "clean format" command (`asignuaCleanFormat`) is the toolbar-button
 // counterpart. Unlike TipTap's stock clearFormatting it keeps headings and lists
-// (it only removes junk), and it can preserve links with configured href
-// prefixes and custom blocks.
+// (it only removes junk), and since the selection is content the editor already
+// accepted, it keeps custom blocks, embeds, images, code blocks and links
+// (relative, anchors and tel: included; only script schemes go).
 //
 // No build is needed: Filament exposes the TipTap core as window.FilamentRichEditor.
 //
@@ -422,7 +423,11 @@ const isOwnSrc = (src, origin) => {
 
 // --- pass 8: attributes -------------------------------------------------
 
-const stripAttributes = (el, keepLinkPrefixes) => {
+// Schemes that execute or smuggle a document. Checked after control characters
+// are stripped (see stripAttributes).
+const SCRIPT_SCHEME = /^(javascript|vbscript|data|file):/i
+
+const stripAttributes = (el, keepLinkPrefixes, existingContent) => {
     const name = tagOf(el)
     const keep = {}
 
@@ -430,7 +435,14 @@ const stripAttributes = (el, keepLinkPrefixes) => {
         // Control characters inside the scheme are a classic way around the check.
         const href = (el.getAttribute('href') || '').replace(/[\x00-\x20]/g, '')
 
-        if (/^(https?|mailto):/i.test(href)) {
+        if (/^(https?|mailto|tel):/i.test(href)) {
+            keep.href = href
+        } else if (existingContent && href !== '' && !SCRIPT_SCHEME.test(href)) {
+            // "Clean format" button mode: the link is already in the document,
+            // so a relative path, an in-page anchor or another scheme is the
+            // author's, not clipboard junk (on paste they are Word's _Toc
+            // anchors and local file paths). Only script schemes are refused;
+            // the Link mark validates the rest.
             keep.href = href
         } else if (keepLinkPrefixes.some((prefix) => href.startsWith(prefix))) {
             // "Clean format" button mode: hrefs with a configured prefix (e.g. an
@@ -473,7 +485,7 @@ const stripAttributes = (el, keepLinkPrefixes) => {
     }
 }
 
-const sweepElements = (body, doc, keepLinkPrefixes) => {
+const sweepElements = (body, doc, keepLinkPrefixes, existingContent) => {
     for (const el of descending(body)) {
         if (!el.isConnected) {
             continue
@@ -509,31 +521,55 @@ const sweepElements = (body, doc, keepLinkPrefixes) => {
             continue
         }
 
-        stripAttributes(node, keepLinkPrefixes)
+        stripAttributes(node, keepLinkPrefixes, existingContent)
     }
 }
 
-// --- custom blocks in button mode ----------------------------------------
+// --- custom blocks and editor nodes in button mode ------------------------
 // "Clean format" on existing content must not destroy <div data-type=
 // "customBlock">: the div would be unwrapped, and data-config/data-id - all that
 // the block is - would be stripped. The block is replaced with a token paragraph
 // (Private Use Area characters: they never occur in live text, and no pass
 // rewrites text nodes except collapsing whitespace, which the token has none of);
 // after all passes the token is expanded back into the saved element.
+//
+// With `existingContent` the same goes for nodes the editor schema itself
+// produced: an embed <iframe> (DROP_WITH_CONTENTS on paste), an <img> inserted
+// by URL or stored on another host (the image triage would remove it) and a
+// <pre> code block (it would be unwrapped and its whitespace collapsed). They
+// already passed the schema, so there is nothing to clean in them. An <img> is
+// inline: its token is plain text in place, never a paragraph of its own.
 
-const BLOCK_TOKEN_PREFIX = 'asignua-custom-block-'
-const BLOCK_TOKEN_SUFFIX = ''
-const BLOCK_TOKEN = /asignua-custom-block-(\d+)/
+const BLOCK_TOKEN_PREFIX = '\uE000asignua-custom-block-'
+const BLOCK_TOKEN_SUFFIX = '\uE001'
+const BLOCK_TOKEN = /\uE000asignua-custom-block-(\d+)\uE001/
 
-const extractCustomBlocks = (body, doc) => {
+const PROTECTED_BLOCKS = 'div[data-type="customBlock"]'
+const PROTECTED_EDITOR_NODES = 'iframe, pre, img'
+
+const extractCustomBlocks = (body, doc, existingContent) => {
     const saved = []
+    const selector = existingContent ? `${PROTECTED_BLOCKS}, ${PROTECTED_EDITOR_NODES}` : PROTECTED_BLOCKS
 
-    for (const el of Array.from(body.querySelectorAll('div[data-type="customBlock"]'))) {
-        const placeholder = doc.createElement('p')
+    for (const el of Array.from(body.querySelectorAll(selector))) {
+        // Already taken out together with an enclosing protected element.
+        if (!el.isConnected) {
+            continue
+        }
 
-        placeholder.textContent = `${BLOCK_TOKEN_PREFIX}${saved.length}${BLOCK_TOKEN_SUFFIX}`
-        saved.push(el)
-        el.replaceWith(placeholder)
+        const block = tagOf(el) !== 'img'
+        const token = doc.createTextNode(`${BLOCK_TOKEN_PREFIX}${saved.length}${BLOCK_TOKEN_SUFFIX}`)
+
+        saved.push({ el, block })
+
+        if (block) {
+            const placeholder = doc.createElement('p')
+
+            placeholder.appendChild(token)
+            el.replaceWith(placeholder)
+        } else {
+            el.replaceWith(token)
+        }
     }
 
     return saved
@@ -541,22 +577,39 @@ const extractCustomBlocks = (body, doc) => {
 
 const restoreCustomBlocks = (body, saved) => {
     for (const node of collect(body, SHOW_TEXT)) {
-        const match = node.nodeValue.match(BLOCK_TOKEN)
+        let text = node
+        let match
 
-        if (!match) {
-            continue
-        }
+        while (text && (match = text.nodeValue.match(BLOCK_TOKEN))) {
+            const { el, block } = saved[Number(match[1])]
+            const parent = text.parentNode
 
-        const el = saved[Number(match[1])]
-        const parent = node.parentNode
+            // Normal case for a block: the placeholder paragraph survived
+            // unchanged - the block takes its place.
+            if (block && parent && tagOf(parent) === 'p' && parent.textContent.trim() === match[0]) {
+                parent.replaceWith(el)
 
-        // Normal case: the placeholder paragraph survived unchanged - the block
-        // takes its place. The fallback (token inside a foreign node) does not
-        // lose the block, though it may leave it in an inline context.
-        if (parent && tagOf(parent) === 'p' && parent.textContent.trim() === match[0]) {
-            parent.replaceWith(el)
-        } else {
-            node.replaceWith(el)
+                break
+            }
+
+            // An inline token, or a block token inside a foreign node (the block
+            // is not lost, though it may end up in an inline context): the token
+            // is cut out of its text node and replaced in place.
+            const tokenNode = text.splitText(match.index)
+            const after = tokenNode.splitText(match[0].length)
+
+            tokenNode.replaceWith(el)
+
+            if (text.nodeValue === '') {
+                text.remove()
+            }
+
+            if (after.nodeValue === '') {
+                after.remove()
+                text = null
+            } else {
+                text = after
+            }
         }
     }
 }
@@ -706,7 +759,10 @@ const fixStructure = (body, doc) => {
  * contract unchanged.
  *
  * @param {string} html raw HTML from the clipboard
- * @param {{parseHtml?: (html: string) => Document, origin?: string, keepLinkPrefixes?: string[], keepCustomBlocks?: boolean}} options
+ * `existingContent` says the HTML is the editor's own serialization, not a
+ * clipboard: embeds, images, code blocks and every non-script link are kept.
+ *
+ * @param {{parseHtml?: (html: string) => Document, origin?: string, keepLinkPrefixes?: string[], keepCustomBlocks?: boolean, existingContent?: boolean}} options
  * @returns {string}
  */
 export const cleanPastedHtml = (html, options = {}) => {
@@ -742,7 +798,9 @@ export const cleanPastedHtml = (html, options = {}) => {
 
     // Extraction BEFORE all passes: anything can sit inside a block's preview
     // (a video iframe etc.), and the very first pass would destroy it.
-    const savedBlocks = options.keepCustomBlocks ? extractCustomBlocks(body, doc) : []
+    const existingContent = options.existingContent === true
+    const savedBlocks =
+        options.keepCustomBlocks || existingContent ? extractCustomBlocks(body, doc, existingContent) : []
 
     for (const el of Array.from(body.querySelectorAll('*'))) {
         if (!el.isConnected) {
@@ -792,7 +850,7 @@ export const cleanPastedHtml = (html, options = {}) => {
         }
     }
 
-    sweepElements(body, doc, keepLinkPrefixes)
+    sweepElements(body, doc, keepLinkPrefixes, existingContent)
     normalizeWhitespace(body)
     dropEmpty(body)
     fixStructure(body, doc)
@@ -849,6 +907,7 @@ const cleanSelectionContent = (state, DOMSerializer, PmDOMParser, keepLinkPrefix
         const cleaned = cleanPastedHtml(container.innerHTML, {
             keepLinkPrefixes,
             keepCustomBlocks: true,
+            existingContent: true,
         })
 
         if (typeof cleaned !== 'string' || cleaned.trim() === '') {

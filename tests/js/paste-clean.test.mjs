@@ -441,6 +441,81 @@ test('button mode is idempotent', () => {
     assert.equal(clean(once, options), once)
 })
 
+// existingContent: what the button passes. The selection is the editor's own
+// serialization, so the nodes in it already passed the schema - they are not
+// clipboard junk and must not be destroyed.
+
+const BUTTON = { keepCustomBlocks: true, existingContent: true }
+
+test('existingContent: an embed iframe, a URL image and a code block survive', () => {
+    const out = clean(
+        '<p style="color:red">Text <img src="https://cdn.other.test/a.png" alt="Remote"></p>' +
+            '<iframe src="https://www.youtube-nocookie.com/embed/abc" sandbox="allow-scripts" width="560"></iframe>' +
+            '<pre><code class="language-php">$a = 1;\n\n    $b = 2;</code></pre>' +
+            '<ul><li><p>Item <img src="https://cdn.other.test/b.png"></p></li></ul>',
+        BUTTON,
+    )
+
+    assert.equal(countOf(out, 'p > img[src="https://cdn.other.test/a.png"][alt="Remote"]'), 1)
+    assert.equal(countOf(out, 'li img[src="https://cdn.other.test/b.png"]'), 1, 'a nested inline image stays inline')
+    assert.equal(countOf(out, 'iframe[src="https://www.youtube-nocookie.com/embed/abc"][sandbox][width="560"]'), 1)
+    const code = parseHtml(out).body.querySelector('pre > code.language-php')
+    assert.ok(code, 'the code block is kept')
+    assert.equal(code.textContent, '$a = 1;\n\n    $b = 2;', 'its whitespace is not collapsed')
+    assert.ok(!/color:red/.test(out), 'the surroundings are still cleaned')
+    assert.equal(countOf(out, 'body > img'), 0, 'an inline image is never hoisted out of its paragraph')
+})
+
+test('existingContent: an image in the middle of text keeps its place', () => {
+    const out = clean('<p>Before <img src="https://cdn.other.test/a.png"> after</p>', BUTTON)
+
+    assert.equal(countOf(out, 'p'), 1)
+    assert.equal(textOf(out), 'Before after')
+    const paragraph = parseHtml(out).body.querySelector('p')
+    assert.equal(paragraph.childNodes[1].nodeName, 'IMG')
+})
+
+test('existingContent: relative, fragment and tel: links stay, script schemes do not', () => {
+    const out = clean(
+        '<p><a href="/contacts">rel</a> <a href="../x">up</a> <a href="#section">frag</a> ' +
+            '<a href="tel:+380441234567">tel</a> <a href="jav\tascript:alert(1)">evil</a> ' +
+            '<a href="vbscript:x">vb</a> <a href="data:text/html,x">data</a></p>',
+        BUTTON,
+    )
+
+    for (const href of ['/contacts', '../x', '#section', 'tel:+380441234567']) {
+        assert.equal(countOf(out, `a[href="${href}"]`), 1, `${href} is kept`)
+    }
+
+    assert.equal(countOf(out, 'a'), 4)
+    assert.ok(!/javascript|vbscript|data:/.test(out))
+})
+
+test('paste: tel: links are kept, relative and fragment links are still unwrapped', () => {
+    const out = clean('<p><a href="tel:+380441234567">call</a> <a href="/x">rel</a> <a href="#_Toc1">toc</a></p>')
+
+    assert.equal(countOf(out, 'a[href="tel:+380441234567"]'), 1)
+    assert.equal(countOf(out, 'a'), 1)
+})
+
+test('paste contract is unchanged without existingContent: iframes and foreign images go', () => {
+    const out = clean(
+        '<p>x <img src="https://cdn.other.test/a.png"></p><iframe src="https://www.youtube-nocookie.com/embed/abc"></iframe>',
+        { keepCustomBlocks: true },
+    )
+
+    assert.equal(countOf(out, 'img, iframe'), 0)
+})
+
+test('existingContent mode is idempotent', () => {
+    const source =
+        '<p>Before <img src="https://cdn.other.test/a.png"> after <a href="/contacts">c</a></p>' +
+        '<iframe src="https://www.youtube-nocookie.com/embed/abc"></iframe><pre><code>a\n  b</code></pre>'
+    const once = clean(source, BUTTON)
+
+    assert.equal(clean(once, BUTTON), once)
+})
+
 // --- idempotency --------------------------------------------------------
 
 const IDEMPOTENCE_CASES = [
