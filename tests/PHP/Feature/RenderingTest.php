@@ -94,6 +94,20 @@ class RenderingTest extends TestCase
         $this->assertStringContainsString('src="https://a.test/a.png"', $html);
     }
 
+    /**
+     * Pins a documented limitation: an attribute name the node declares itself wins over the
+     * global one. Filament's image node owns `id` (its media key, stored as `data-id`), so a
+     * hand-written `id` on an `<img>` is lost while `class` and `style` survive.
+     */
+    public function test_a_node_own_attribute_wins_so_an_image_id_is_not_kept(): void
+    {
+        $html = RichEditorToolkit::renderer('<p><img id="hero" class="w-full" data-id="k1" src="https://a.test/a.png"></p>')->toHtml();
+
+        $this->assertStringContainsString('class="w-full"', $html);
+        $this->assertStringContainsString('data-id="k1"', $html);
+        $this->assertStringNotContainsString('id="hero"', $html);
+    }
+
     public function test_a_video_iframe_survives_with_forced_hardening(): void
     {
         $html = RichEditorToolkit::renderer(

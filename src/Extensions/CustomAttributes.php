@@ -32,6 +32,10 @@ class CustomAttributes extends Extension
     /**
      * Nodes and marks that receive the attributes. A type missing here loses them silently.
      *
+     * A name the node declares itself wins over the global one (tiptap-php and TipTap merge
+     * the node's attributes last): `image` owns `id` (Filament's media key, `data-id`), so a
+     * hand-written `id` on an `<img>` is not kept, while `class`/`style` are.
+     *
      * @var list<string>
      */
     public const array TYPES = [

@@ -115,7 +115,9 @@ through the upload button.
 ### CustomAttributesPlugin
 
 Keeps `class`, `id`, `style` and further attributes you list, on paragraphs, headings, lists, tables, images, links,
-details, grid, spans and generic `<div>` containers. It also stops legacy markup from collapsing: `<div class="row"><img>
+details, grid, spans and generic `<div>` containers. A name the node declares itself belongs to the node and wins: an
+`<img>` keeps `class` and `style` but **not** `id` (Filament's image node owns `id` as its media key, stored as
+`data-id`), and an extra name such as `title` is not kept on a node that has its own `title` (image, iframe). It also stops legacy markup from collapsing: `<div class="row"><img>
 <span>…</span></div>` keeps its direct children, and `<li><div>…</div></li>` stays a list item.
 
 ```php
@@ -222,6 +224,8 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
   Filament's loader. Nothing else fails, the plugin is just absent.
 - **Node types.** An attribute is kept only on the node types in the list (`Extensions\CustomAttributes::TYPES` plus the
   `types` config). The PHP and the JS lists are identical on purpose; a test pins it.
+- **A node's own attribute wins.** `id` on an `<img>` and any listed name a node declares itself (`title` on
+  image/iframe, `width`, `src`, ...) follow that node's rules, not the toolkit's; put the anchor on a wrapping element.
 - **The sanitizer is the toolkit's own.** Allowances apply only to `RichEditorToolkit::renderer()` and
   `RichEditorToolkit::toHtml()`; a plain `RichContentRenderer::toHtml()` and every `->html()` column still drop
   `<iframe>` and the extra attributes.
