@@ -1,6 +1,6 @@
 {
     "name": "asignua/filament-rich-editor-toolkit",
-    "description": "Free plugins for the Filament 5 RichEditor: paste cleanup for Word and Google Docs, preserved class/id/style/data-* attributes, safe iframe and video embeds, image by URL and a toolbar that stays visible on long content.",
+    "description": "Five independent plugins for the Filament 5 RichEditor (TipTap): PasteCleanPlugin removes Word and Google Docs junk (mso-* styles, fonts, colour spans), CustomAttributesPlugin keeps class, id, style and data-* attributes both in the browser and through the server sanitizer, EmbedPlugin allows safe iframe and video embeds from an allow-list, ImageUrlPlugin inserts an image by URL, and StickyToolbarPlugin keeps the toolbar visible on long content, even inside sections, tabs and repeaters.",
     "keywords": ["filament", "filament-plugin", "laravel", "rich-editor", "tiptap", "paste", "word", "iframe", "embed", "sticky-toolbar"],
     "homepage": "https://github.com/asignua/filament-rich-editor-toolkit",
     "support": {
