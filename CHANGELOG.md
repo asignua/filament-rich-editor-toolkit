@@ -2,7 +2,7 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
-## Unreleased
+## v1.0.2 - 2026-10-08
 
 - Dependencies: jsdom 30, esbuild 0.28 (dev); the built assets are unchanged.
 - Clean format: a selection that spans a custom block is also put back as an open slice, so its first and last paragraphs are no longer split. The open ends are clamped to the depth of the cleaned first/last node (a custom block is closed; a flattened wrapper such as a `<div>` no longer leaves an end deeper than the node), and this is covered by tests on a real `prosemirror-model` schema (`prosemirror-model` is now a dev dependency).
