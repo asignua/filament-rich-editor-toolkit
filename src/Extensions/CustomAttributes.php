@@ -90,24 +90,39 @@ class CustomAttributes extends Extension
     public const array FORBIDDEN_PREFIXES = ['on', 'x-', 'data-x-', 'hx-', 'data-hx-', 'v-', 'ng-', 'data-ng-', 'wire:', 'xmlns'];
 
     /**
-     * Classes written by the extension that OWNS them: `TextColorExtension` adds `color`,
-     * `LeadExtension` — `lead`, `GridExtension` — `grid-layout`. `HTML::mergeAttributes()`
-     * JOINS classes instead of overwriting, so without this filter the result would be
-     * `class="color color"`.
+     * Classes written by the extension that OWNS them, and the tags that extension exists for:
+     * `TextColorExtension` adds `color` to a `span`, `LeadExtension` — `lead` to a `div`,
+     * `GridExtension` — `grid-layout` to a `div`. `HTML::mergeAttributes()` JOINS classes
+     * instead of overwriting, so without this filter the result would be `class="color color"`.
      *
-     * @var list<string>
+     * The filter is per tag: on any other element the class is the author's (Bootstrap's
+     * `<p class="lead">`) and nobody else would write it back.
+     *
+     * @var array<string, list<string>>
      */
-    private const array OWNED_CLASSES = ['color', 'lead', 'grid-layout'];
+    private const array OWNED_CLASSES = [
+        'color' => ['span'],
+        'lead' => ['div'],
+        'grid-layout' => ['div'],
+    ];
 
     /**
-     * The same for declarations: `text-align` comes from `TextAlign`, `--color`/`--dark-color`
-     * from `TextColorExtension`, `--cols` from `GridExtension`, `height`/`width` from
-     * `ImageExtension`. A hand-written `text-align: center` is not lost: `TextAlign` picks it
-     * up and renders it.
+     * The same for declarations: `text-align` comes from `TextAlign` (paragraph and headings
+     * only), `--color`/`--dark-color` from `TextColorExtension`, `--cols` from `GridExtension`,
+     * `height`/`width` from `ImageExtension`. A hand-written `text-align: center` on a `<p>` is
+     * not lost: `TextAlign` picks it up and renders it; on a `<td>` or a `<div>` nobody owns it,
+     * so it stays in `style`.
      *
-     * @var list<string>
+     * @var array<string, list<string>>
      */
-    private const array OWNED_STYLES = ['text-align', '--color', '--dark-color', '--cols', 'height', 'width'];
+    private const array OWNED_STYLES = [
+        'text-align' => ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+        '--color' => ['span'],
+        '--dark-color' => ['span'],
+        '--cols' => ['div'],
+        'height' => ['img'],
+        'width' => ['img'],
+    ];
 
     /**
      * @param list<string> $attributes extra attribute names beyond class/id/style
@@ -178,7 +193,7 @@ class CustomAttributes extends Extension
         foreach (self::sanitizeNames($this->attributes) as $name) {
             $attributes[$name] = [
                 'default' => null,
-                'parseHTML' => static fn (DOMElement $node): ?string => self::parse($name, $node->getAttribute($name)),
+                'parseHTML' => static fn (DOMElement $node): ?string => self::parse($name, $node),
                 'renderHTML' => static fn (mixed $attributes): ?array => self::render($attributes, $name),
             ];
         }
@@ -191,37 +206,40 @@ class CustomAttributes extends Extension
         ];
     }
 
-    private static function parse(string $name, string $value): ?string
+    private static function parse(string $name, DOMElement $node): ?string
     {
+        $value = $node->getAttribute($name);
+        $tag = strtolower($node->nodeName);
+
         return match ($name) {
-            'class' => self::filterClass($value),
-            'style' => self::filterStyle($value),
+            'class' => self::filterClass($value, $tag),
+            'style' => self::filterStyle($value, $tag),
             default => self::blankToNull($value),
         };
     }
 
-    private static function filterClass(string $value): ?string
+    private static function filterClass(string $value, string $tag): ?string
     {
         $classes = array_filter(
             preg_split('/\s+/', trim($value)) ?: [],
-            static fn (string $class): bool => $class !== '' && !in_array($class, self::OWNED_CLASSES, true),
+            static fn (string $class): bool => $class !== '' && !in_array($tag, self::OWNED_CLASSES[$class] ?? [], true),
         );
 
         return $classes === [] ? null : implode(' ', $classes);
     }
 
-    private static function filterStyle(string $value): ?string
+    private static function filterStyle(string $value, string $tag): ?string
     {
         $declarations = array_filter(
             array_map(trim(...), explode(';', $value)),
-            static function (string $declaration): bool {
+            static function (string $declaration) use ($tag): bool {
                 if ($declaration === '') {
                     return false;
                 }
 
                 $property = strtolower(trim(strtok($declaration, ':') ?: ''));
 
-                return !in_array($property, self::OWNED_STYLES, true);
+                return !in_array($tag, self::OWNED_STYLES[$property] ?? [], true);
             },
         );
 

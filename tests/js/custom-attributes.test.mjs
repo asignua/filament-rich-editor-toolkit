@@ -15,7 +15,7 @@ import factory, {
     filterStyle,
     hasBlockChild,
 } from '../../resources/js/src/custom-attributes.js'
-import embedFactory, { isAllowedSrc } from '../../resources/js/src/embed.js'
+import embedFactory, { canonicalSrc, isAllowedSrc, parseVideo, renderIframe } from '../../resources/js/src/embed.js'
 import { readList } from '../../resources/js/src/config.js'
 
 const dom = new JSDOM('')
@@ -26,18 +26,33 @@ test('modules import under Node without window', () => {
     assert.equal(typeof embedFactory, 'function')
 })
 
-test('filterClass drops the classes owned by other extensions', () => {
-    assert.equal(filterClass('color lead my-class  other'), 'my-class other')
-    assert.equal(filterClass('color'), null)
-    assert.equal(filterClass(''), null)
-    assert.equal(filterClass(null), null)
+test('filterClass drops a class only on the tag whose extension owns it', () => {
+    assert.equal(filterClass('color lead my-class  other', 'span'), 'lead my-class other')
+    assert.equal(filterClass('color lead grid-layout x', 'div'), 'color x')
+    assert.equal(filterClass('lead', 'p'), 'lead', 'Bootstrap p.lead keeps its class')
+    assert.equal(filterClass('color', 'span'), null)
+    assert.equal(filterClass('', 'span'), null)
+    assert.equal(filterClass(null, 'span'), null)
 })
 
-test('filterStyle drops owned declarations and keeps the rest', () => {
-    assert.equal(filterStyle('text-align: center; margin: 0; --cols: 3'), 'margin: 0')
-    assert.equal(filterStyle('WIDTH: 10px'), null)
-    assert.equal(filterStyle('color: red;'), 'color: red')
-    assert.equal(filterStyle(''), null)
+test('filterStyle drops owned declarations only on the owning tag', () => {
+    assert.equal(filterStyle('text-align: center; margin: 0; --cols: 3', 'p'), 'margin: 0; --cols: 3')
+    assert.equal(filterStyle('text-align: center; margin: 0; --cols: 3', 'div'), 'text-align: center; margin: 0')
+    assert.equal(filterStyle('WIDTH: 10px', 'img'), null)
+    assert.equal(filterStyle('width: 30%; text-align: center', 'td'), 'width: 30%; text-align: center')
+    assert.equal(filterStyle('width:100%;height:400px', 'iframe'), 'width:100%; height:400px')
+    assert.equal(filterStyle('color: red;', 'p'), 'color: red')
+    assert.equal(filterStyle('', 'p'), null)
+})
+
+test('buildAttributes reads the tag of the element it parses', () => {
+    const attributes = buildAttributes(['class', 'style'])
+    const td = html('<table><tbody><tr><td class="lead" style="text-align:center">x</td></tr></tbody></table>').querySelector('td')
+    const p = html('<p class="lead" style="text-align:center">x</p>').firstChild
+
+    assert.equal(attributes.style.parseHTML(td), 'text-align:center')
+    assert.equal(attributes.style.parseHTML(p), null)
+    assert.equal(attributes.class.parseHTML(td), 'lead')
 })
 
 test('blankToNull trims', () => {
@@ -47,7 +62,7 @@ test('blankToNull trims', () => {
 
 test('buildAttributes parses and renders every configured name', () => {
     const attributes = buildAttributes(['class', 'data-track'])
-    const element = html('<p class="a color" data-track=" go ">x</p>').firstChild
+    const element = html('<span class="a color" data-track=" go ">x</span>').firstChild
 
     assert.equal(attributes.class.parseHTML(element), 'a')
     assert.equal(attributes['data-track'].parseHTML(element), 'go')
@@ -137,10 +152,100 @@ test('the embed node rejects an iframe whose src is not allow-listed', () => {
 
         // No `host` parameter in the (Node) module URL -> nothing is allowed.
         assert.equal(rule.getAttrs(html('<iframe src="https://player.vimeo.com/video/1"></iframe>').firstChild), false)
-        assert.deepEqual(node.renderHTML({ HTMLAttributes: { src: 'https://a.test', title: '', width: null } }), [
-            'iframe',
-            { src: 'https://a.test' },
+        // And nothing is rendered for it either: a node built from JSON is checked again.
+        assert.deepEqual(node.renderHTML({ HTMLAttributes: { src: 'https://a.test' } }), [
+            'div',
+            { 'data-asignua-embed-blocked': '' },
         ])
+    } finally {
+        delete globalThis.window
+    }
+})
+
+test('hasBlockChild treats an iframe as a block child (a responsive embed wrapper)', () => {
+    assert.equal(hasBlockChild(html('<div class="wrap"><iframe src="https://a.test"></iframe></div>').firstChild), true)
+})
+
+test('renderIframe: a node built from JSON cannot show a javascript: or a foreign src', () => {
+    const hosts = ['www.youtube-nocookie.com/embed/']
+    const blocked = ['div', { 'data-asignua-embed-blocked': '' }]
+
+    assert.deepEqual(renderIframe({ src: 'javascript:fetch(`/evil?c=`+document.cookie)' }, hosts), blocked)
+    assert.deepEqual(renderIframe({ src: 'https://attacker.test/page' }, hosts), blocked)
+    assert.deepEqual(renderIframe({ src: null }, hosts), blocked)
+    assert.deepEqual(renderIframe({}, hosts), blocked)
+})
+
+test('renderIframe forces the configured hardening over the node attributes', () => {
+    const [tag, attributes] = renderIframe(
+        { src: 'https://www.youtube-nocookie.com/embed/abcdef', sandbox: 'allow-top-navigation', title: '', width: '560' },
+        ['www.youtube-nocookie.com/embed/'],
+        { sandbox: 'allow-scripts allow-presentation', referrerpolicy: 'no-referrer' },
+    )
+
+    assert.equal(tag, 'iframe')
+    assert.deepEqual(attributes, {
+        src: 'https://www.youtube-nocookie.com/embed/abcdef',
+        sandbox: 'allow-scripts allow-presentation',
+        width: '560',
+        referrerpolicy: 'no-referrer',
+    })
+})
+
+test('the embed factory reads the forced hardening from its module URL', () => {
+    globalThis.window = { FilamentRichEditor: { tiptap: { core: { Node: { create: (c) => c } } } } }
+
+    try {
+        // import.meta.url is a plain file URL under Node: nothing forced, nothing allowed.
+        const node = embedFactory()
+
+        assert.deepEqual(node.renderHTML({ HTMLAttributes: { src: 'https://x.test' } })[0], 'div')
+        assert.equal(node.addAttributes().src.parseHTML(html('<iframe src="https://evil.test"></iframe>').firstChild), 'https://evil.test')
+    } finally {
+        delete globalThis.window
+    }
+})
+
+test('parseVideo and canonicalSrc rebuild YouTube and Vimeo links like the PHP VideoEmbed', () => {
+    const hosts = ['www.youtube-nocookie.com/embed/', 'player.vimeo.com/video/']
+    const cases = [
+        ['https://www.youtube.com/embed/dQw4w9WgXcQ', 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0'],
+        ['https://youtube.com/embed/dQw4w9WgXcQ?start=30', 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&start=30'],
+        ['https://youtu.be/dQw4w9WgXcQ?t=1h2m3s', 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&start=3723'],
+        ['https://www.youtube.com/watch?feature=share&v=dQw4w9WgXcQ', 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0'],
+        ['https://vimeo.com/123456789/abcdef1234', 'https://player.vimeo.com/video/123456789?h=abcdef1234'],
+        // Already built-in: untouched.
+        ['https://player.vimeo.com/video/123456789?h=abcdef1234&dnt=1', 'https://player.vimeo.com/video/123456789?h=abcdef1234&dnt=1'],
+        // Not recognised: returned as is (and then refused by isAllowedSrc).
+        ['https://evil.test/https://youtube.com/embed/dQw4w9WgXcQ', 'https://evil.test/https://youtube.com/embed/dQw4w9WgXcQ'],
+        ['javascript:alert(1)', 'javascript:alert(1)'],
+    ]
+
+    for (const [input, expected] of cases) {
+        assert.equal(canonicalSrc(input, hosts), expected, input)
+    }
+
+    assert.equal(isAllowedSrc(canonicalSrc('https://www.youtube.com/embed/dQw4w9WgXcQ', hosts), hosts), true)
+    assert.equal(parseVideo('https://youtu.be/dQw4w9WgXcQdQw4w9WgXcQ'), null)
+})
+
+test('a playlist or channel embed is not a video id', () => {
+    assert.equal(parseVideo('https://www.youtube.com/embed/videoseries?list=PLabcdefghij'), null)
+    assert.equal(parseVideo('https://www.youtube.com/embed/live_stream?channel=UCabc'), null)
+})
+
+test('the span mark skips node spans (mention, merge tag) and span.color', () => {
+    globalThis.window = { FilamentRichEditor: { tiptap: { core: fakeCore() } } }
+
+    try {
+        const span = factory().addExtensions().find((e) => e.name === 'customSpan')
+        const [rule] = span.parseHTML()
+        const first = (source) => html(source).querySelector('span')
+
+        assert.equal(rule.getAttrs(first('<p><span data-type="mergeTag" data-id="name">Name</span></p>')), false)
+        assert.equal(rule.getAttrs(first('<p><span data-type="mention" data-id="1">Ann</span></p>')), false)
+        assert.equal(rule.getAttrs(first('<p><span class="color">x</span></p>')), false)
+        assert.deepEqual(rule.getAttrs(first('<p><span class="hook">x</span></p>')), {})
     } finally {
         delete globalThis.window
     }

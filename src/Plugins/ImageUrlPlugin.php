@@ -80,7 +80,7 @@ class ImageUrlPlugin implements RichContentPlugin
         return [
             RichEditorTool::make('imageUrl')
                 ->label(__('rich-editor-toolkit::rich-editor-toolkit.image_url'))
-                ->icon(Heroicon::OutlinedLink)
+                ->icon(Heroicon::OutlinedPhoto)
                 ->action(),
         ];
     }
@@ -102,8 +102,8 @@ class ImageUrlPlugin implements RichContentPlugin
                         ->required()
                         ->rules([
                             fn (): Closure => function (string $attribute, mixed $value, Closure $fail): void {
-                                if (!$this->accepts((string) $value)) {
-                                    $fail(__('rich-editor-toolkit::rich-editor-toolkit.image_url_invalid'));
+                                if (($message = $this->errorFor((string) $value)) !== null) {
+                                    $fail($message);
                                 }
                             },
                         ]),
@@ -127,7 +127,24 @@ class ImageUrlPlugin implements RichContentPlugin
         ];
     }
 
-    public function accepts(string $value): bool
+    /**
+     * The validation message for what was typed into the dialog, or null when it is accepted.
+     * A valid address on another host gets its own message: "enter a full address" would be
+     * false, and the editor would not learn that the site restricts hosts.
+     */
+    public function errorFor(string $value): ?string
+    {
+        if (!$this->isHttpUrl($value)) {
+            return (string) __('rich-editor-toolkit::rich-editor-toolkit.image_url_invalid');
+        }
+
+        return $this->accepts($value) ? null : (string) __('rich-editor-toolkit::rich-editor-toolkit.image_url_host_not_allowed');
+    }
+
+    /**
+     * A full http(s) address, whatever its host.
+     */
+    private function isHttpUrl(string $value): bool
     {
         $value = trim($value);
 
@@ -135,9 +152,14 @@ class ImageUrlPlugin implements RichContentPlugin
             return false;
         }
 
-        $scheme = parse_url($value, PHP_URL_SCHEME);
+        return in_array(parse_url($value, PHP_URL_SCHEME), ['http', 'https'], true);
+    }
 
-        if (!in_array($scheme, ['http', 'https'], true)) {
+    public function accepts(string $value): bool
+    {
+        $value = trim($value);
+
+        if (!$this->isHttpUrl($value)) {
             return false;
         }
 

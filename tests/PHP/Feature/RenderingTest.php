@@ -254,4 +254,56 @@ class RenderingTest extends TestCase
 
         $this->assertStringNotContainsString('<script', $html);
     }
+
+    public function test_text_align_width_and_lead_survive_where_no_extension_owns_them(): void
+    {
+        $html = RichEditorToolkit::renderer(
+            '<table style="width:100%"><tbody><tr><td style="text-align:center; width:30%">a</td></tr></tbody></table>'
+            .'<div style="text-align:right"><p>in div</p></div>'
+            .'<p class="lead">lead paragraph</p>',
+        )->toHtml();
+
+        $this->assertStringContainsString('width:100%', $html);
+        $this->assertStringContainsString('text-align:center', $html);
+        $this->assertStringContainsString('width:30%', $html);
+        $this->assertStringContainsString('text-align:right', $html);
+        $this->assertStringContainsString('<p class="lead"', $html);
+    }
+
+    public function test_an_iframe_keeps_the_style_a_hand_written_source_gave_it(): void
+    {
+        $html = RichEditorToolkit::renderer(
+            '<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" style="width:100%; height:400px"></iframe>',
+        )->toHtml();
+
+        $this->assertStringContainsString('width:100%', $html);
+        $this->assertStringContainsString('height:400px', $html);
+    }
+
+    public function test_a_div_that_wraps_an_iframe_keeps_the_embed_inside(): void
+    {
+        $html = RichEditorToolkit::renderer(
+            '<div class="video-wrapper"><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe></div>',
+        )->toHtml();
+
+        $this->assertMatchesRegularExpression('~<div class="video-wrapper"><iframe[^>]*></iframe></div>~', $html);
+    }
+
+    public function test_youtube_own_share_embed_code_is_rebuilt_instead_of_dropped(): void
+    {
+        $html = RichEditorToolkit::renderer(
+            '<iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ?start=30" title="YouTube video player" allowfullscreen></iframe>',
+        )->toHtml();
+
+        $this->assertStringContainsString('src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel&#61;0&amp;start&#61;30"', $html);
+        $this->assertStringNotContainsString('www.youtube.com/', $html);
+        $this->assertStringContainsString('sandbox=', $html);
+    }
+
+    public function test_a_youtube_playlist_embed_is_not_rebuilt_into_a_broken_player(): void
+    {
+        $html = RichEditorToolkit::renderer('<iframe src="https://www.youtube.com/embed/videoseries?list=PLabcdefghij"></iframe>')->toHtml();
+
+        $this->assertStringNotContainsString('<iframe', $html);
+    }
 }

@@ -2,6 +2,21 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
+## Unreleased
+
+- Dependencies: jsdom 30, esbuild 0.28 (dev); the built assets are unchanged.
+- Clean format: a selection that spans a custom block is also put back as an open slice, so its first and last paragraphs are no longer split. The open ends are clamped to the depth of the cleaned first/last node (a custom block is closed; a flattened wrapper such as a `<div>` no longer leaves an end deeper than the node), and this is covered by tests on a real `prosemirror-model` schema (`prosemirror-model` is now a dev dependency).
+- `EmbedPlugin` (security): the editor no longer draws an `<iframe>` it did not vet. A node built from JSON (`RichEditor::json()` stores a posted document as is) with a `javascript:` or foreign `src` is replaced by an inert placeholder in the panel, and the configured `sandbox`, `allow` and `referrerpolicy` are forced in the editor as they are on render; before, such a node ran in the panel's origin for every admin who opened the record.
+- `EmbedPlugin`: YouTube's own embed code (`www.youtube.com/embed/ID`), `watch?v=`, `youtu.be` and `vimeo.com/ID` iframes from the source view, a paste or migrated content are rebuilt to the built-in `youtube-nocookie.com` / `player.vimeo.com` form instead of being dropped (`EmbedIframe::canonicalSrc()`, mirrored in the browser). A playlist (`embed/videoseries`) or channel (`embed/live_stream`) URL is no longer taken for a video id.
+- `CustomAttributesPlugin`: a `<div>` that wraps an `<iframe>` (the responsive embed wrapper) is a block container, so the iframe stays inside it instead of being lifted out and leaving an empty div.
+- `CustomAttributesPlugin`: the classes and declarations another extension writes itself are dropped only on the tag it writes them on (`text-align` on `p`/`h1`-`h6`, `width`/`height` on `img`, `--color` on `span`, `--cols`/`grid-layout`/`lead` on `div`). A hand-written `text-align` or `width` on a `td`, `table`, `div` or `iframe`, and Bootstrap's `<p class="lead">`, are kept; before they were lost silently.
+- `CustomAttributesPlugin`: the span mark no longer captures Filament's mention and merge-tag spans (`data-type`) when HTML is parsed in the browser; a copied merge tag came back as plain text with its `data-id` lost.
+- `PasteCleanPlugin`: "Clear formatting" puts the result back as an open slice like a paste, so a few words picked out of a paragraph stay in it instead of splitting it into three; with a table cell selection it does nothing instead of wrecking the table.
+- `PasteCleanPlugin`: "Clear formatting" keeps what the editor produced: mentions and merge tags, grid and columns, details, the lead paragraph, and a link's `target="_blank"` / `rel`.
+- `PasteCleanPlugin`: a space inside a link `href` becomes `%20` instead of being removed (`Shared Documents/Plan 2026.docx` no longer turns into a different address); the script-scheme check still ignores spaces and control characters.
+- `ImageUrlPlugin`: a valid address on a host outside `hosts()` gets its own message (`image_url_host_not_allowed`, all 10 locales) instead of "Enter a full http(s) address"; the button uses a photo icon, not the chain icon of the stock Link button.
+- `StickyToolbarPlugin`: a per-field `RichEditor::stickyOffset()` wins over the plugin offset, and the plugin offset no longer applies inside a modal, where Filament's measured header height is used (the plugin offset stays ahead of Filament's default, so `offset()` works outside modals).
+
 ## v1.0.1 - 2026-10-05
 
 - `PasteCleanPlugin`: the "Clear formatting" button no longer destroys nodes the editor itself produced. Embeds (`<iframe>` from `EmbedPlugin`), images (also `ImageUrlPlugin` images and images on another host) and code blocks in the selection are kept as they are; before, the iframe was dropped, the image removed by the clipboard image triage and a code block flattened into one paragraph.

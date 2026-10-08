@@ -113,4 +113,27 @@ class EmbedSupportTest extends TestCase
         $this->assertNull(EmbedPlugin::attributesFor('https://evil.test/x'));
         $this->assertNull(EmbedPlugin::attributesFor(''));
     }
+
+    public function test_canonical_src_rebuilds_a_recognised_video_link_and_leaves_the_rest(): void
+    {
+        $this->assertSame('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0', EmbedIframe::canonicalSrc('https://www.youtube.com/embed/dQw4w9WgXcQ'));
+        $this->assertSame('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&start=30', EmbedIframe::canonicalSrc('https://youtu.be/dQw4w9WgXcQ?t=30'));
+        $this->assertSame('https://player.vimeo.com/video/123456789?h=abcdef1234', EmbedIframe::canonicalSrc('https://vimeo.com/123456789/abcdef1234'));
+        // Already allowed: untouched (query kept as written).
+        $this->assertSame('https://player.vimeo.com/video/123456789?h=abcdef1234&dnt=1', EmbedIframe::canonicalSrc('https://player.vimeo.com/video/123456789?h=abcdef1234&dnt=1'));
+        // Not a video: judged by the allow-list alone.
+        $this->assertSame('https://evil.test/x', EmbedIframe::canonicalSrc('https://evil.test/x'));
+        $this->assertSame('javascript:alert(1)', EmbedIframe::canonicalSrc('javascript:alert(1)'));
+        $this->assertSame('', EmbedIframe::canonicalSrc(null));
+    }
+
+    public function test_the_editor_module_gets_the_forced_hardening(): void
+    {
+        config()->set('rich-editor-toolkit.embed.sandbox', 'allow-scripts allow-presentation');
+
+        $url = EmbedPlugin::make()->getTipTapJsExtensions()[0];
+
+        $this->assertStringContainsString('sandbox=allow-scripts%20allow-presentation', $url);
+        $this->assertStringContainsString('referrerpolicy=', $url);
+    }
 }

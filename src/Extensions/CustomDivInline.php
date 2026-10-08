@@ -36,7 +36,7 @@ class CustomDivInline extends Node
     public const BLOCK_TAGS = [
         'address', 'article', 'aside', 'blockquote', 'details', 'div', 'dl', 'fieldset',
         'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'header', 'hr', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'ul',
+        'header', 'hr', 'iframe', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'table', 'ul',
     ];
 
     public static function hasBlockChild(DOMElement $node): bool

@@ -77,6 +77,29 @@ final class EmbedIframe
     }
 
     /**
+     * The `src` an iframe gets when it is PARSED (source view, paste, migrated content).
+     *
+     * A video link that is not in the built-in form — YouTube's own "Share -> Embed" code
+     * (`www.youtube.com/embed/ID`), a `watch?v=` or `youtu.be` address, `vimeo.com/ID` — is
+     * rebuilt from provider and id exactly as the "Embed" dialog would, instead of being dropped
+     * for failing the allow-list. A source that already passes the allow-list stays as it is
+     * (an unlisted Vimeo hash, a map), and so does anything unrecognised: it is then judged by
+     * {@see EmbedSource::allows()} alone.
+     */
+    public static function canonicalSrc(?string $src): string
+    {
+        $src = trim((string) $src);
+
+        if ($src === '' || EmbedSource::allows($src)) {
+            return $src;
+        }
+
+        $video = VideoEmbed::parse($src);
+
+        return $video === null ? $src : VideoEmbed::embedUrl($video['provider'], $video['id'], $video['start'], hash: $video['hash']);
+    }
+
+    /**
      * @internal not used by the toolkit; may change without a major release
      */
     public static function html(string $provider, string $id, ?int $start = null, ?string $hash = null): string

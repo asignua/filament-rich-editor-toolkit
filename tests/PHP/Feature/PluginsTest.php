@@ -7,14 +7,18 @@ namespace Asignua\RichEditorToolkit\Tests\Feature;
 use Asignua\RichEditorToolkit\Assets;
 use Asignua\RichEditorToolkit\Extensions\CustomAttributes;
 use Asignua\RichEditorToolkit\Extensions\CustomDivInline;
+use Asignua\RichEditorToolkit\Extensions\CustomSpan;
 use Asignua\RichEditorToolkit\Extensions\IframeNode;
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Asignua\RichEditorToolkit\Tests\TestCase;
+use DOMDocument;
+use DOMElement;
 use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\RichEditor\Plugins\Contracts\RichContentPlugin;
+use Filament\Support\Icons\Heroicon;
 use Livewire\Livewire;
 use ReflectionClassConstant;
 use Workbench\App\Livewire\DemoForm;
@@ -79,12 +83,24 @@ class PluginsTest extends TestCase
     {
         $js = (string) file_get_contents(__DIR__.'/../../../resources/js/src/custom-attributes.js');
 
-        foreach (['OWNED_CLASSES' => [CustomAttributes::class, 'OWNED_CLASSES'], 'OWNED_STYLES' => [CustomAttributes::class, 'OWNED_STYLES'], 'BLOCK_TAGS' => [CustomDivInline::class, 'BLOCK_TAGS']] as $name => [$class, $constant]) {
-            $this->assertSame(1, preg_match('/export const '.$name.' =\s*(.*?)(?:\]|\n\n)/s', $js, $match), $name);
-            preg_match_all('/[-a-z0-9]+/', (string) preg_replace("/'\s*\+\s*'/", ',', $match[1]), $values);
+        $reflection = new ReflectionClassConstant(CustomDivInline::class, 'BLOCK_TAGS');
+        $this->assertSame(1, preg_match('/export const BLOCK_TAGS =\s*(.*?)\n\n/s', $js, $match), 'BLOCK_TAGS');
+        preg_match_all('/[-a-z0-9]+/', (string) preg_replace("/'\s*\+\s*'/", ',', $match[1]), $values);
+        $this->assertSame($reflection->getValue(), $values[0], 'BLOCK_TAGS');
 
-            $reflection = new ReflectionClassConstant($class, $constant);
-            $this->assertSame($reflection->getValue(), $values[0], $name);
+        // name => tags that own it
+        foreach (['OWNED_CLASSES', 'OWNED_STYLES'] as $name) {
+            $this->assertSame(1, preg_match('/export const '.$name.' = \{(.*?)\n\}/s', $js, $match), $name);
+            preg_match_all("/'?([-a-z]+)'?: \[(.*?)\]/", $match[1], $pairs, PREG_SET_ORDER);
+
+            $owned = [];
+
+            foreach ($pairs as $pair) {
+                preg_match_all('/[a-z0-9]+/', $pair[2], $tags);
+                $owned[$pair[1]] = $tags[0];
+            }
+
+            $this->assertSame((new ReflectionClassConstant(CustomAttributes::class, $name))->getValue(), $owned, $name);
         }
     }
 
@@ -111,6 +127,41 @@ class PluginsTest extends TestCase
         $restricted = ImageUrlPlugin::make()->hosts(['CDN.test']);
         $this->assertTrue($restricted->accepts('https://cdn.test/a.png'));
         $this->assertFalse($restricted->accepts('https://other.test/a.png'));
+    }
+
+    public function test_the_span_mark_leaves_node_spans_such_as_merge_tags_alone(): void
+    {
+        $rule = (new CustomSpan)->parseHTML()[0]['getAttrs'];
+        $span = static function (string $html): DOMElement {
+            $dom = new DOMDocument;
+            $dom->loadHTML('<?xml encoding="utf-8"?><body>'.$html.'</body>');
+
+            return $dom->getElementsByTagName('span')->item(0);
+        };
+
+        $this->assertFalse($rule($span('<span data-type="mergeTag" data-id="name">Name</span>')));
+        $this->assertFalse($rule($span('<span data-type="mention" data-id="1">Ann</span>')));
+        $this->assertFalse($rule($span('<span class="color">x</span>')));
+        $this->assertNull($rule($span('<span class="hook">x</span>')));
+    }
+
+    public function test_image_url_tells_a_foreign_host_from_a_malformed_address(): void
+    {
+        $restricted = ImageUrlPlugin::make()->hosts(['cdn.test']);
+
+        $this->assertNull($restricted->errorFor('https://cdn.test/a.png'));
+        $this->assertSame(__('rich-editor-toolkit::rich-editor-toolkit.image_url_host_not_allowed'), $restricted->errorFor('https://other.test/a.png'));
+        $this->assertSame(__('rich-editor-toolkit::rich-editor-toolkit.image_url_invalid'), $restricted->errorFor('/a.png'));
+        $this->assertSame(__('rich-editor-toolkit::rich-editor-toolkit.image_url_invalid'), ImageUrlPlugin::make()->errorFor('javascript:alert(1)'));
+        $this->assertNotSame(
+            __('rich-editor-toolkit::rich-editor-toolkit.image_url_invalid'),
+            __('rich-editor-toolkit::rich-editor-toolkit.image_url_host_not_allowed'),
+        );
+    }
+
+    public function test_the_image_url_button_does_not_reuse_the_link_icon(): void
+    {
+        $this->assertNotSame(Heroicon::Link, ImageUrlPlugin::make()->getEditorTools()[0]->getIcon());
     }
 
     public function test_the_modules_are_registered_with_filament_assets_and_ship_compiled(): void

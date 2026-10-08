@@ -3,8 +3,10 @@
  *
  * Hand-written, no build step: the toolbar is made sticky for EVERY rich editor in the panel,
  * not only those that call ->stickyToolbar(), and the offset is taken from
- * --asignua-rte-sticky-offset when the plugin sets one, otherwise from Filament's own variable
- * (which already knows about the sticky topbar and, in a modal, its sticky header).
+ * Filament's own per-field --fi-fo-rich-editor-sticky-offset (RichEditor::stickyOffset()) when
+ * the field sets one, else --asignua-rte-sticky-offset when the plugin sets one, else Filament's
+ * own default (the topbar, or a modal's sticky header). Inside a modal and on a field with its
+ * own offset the plugin offset is switched off (see below).
  *
  * Ordinary CSS: no @layer, no preflight, no utilities. Selectors are single-class-deep on
  * purpose so a host stylesheet can override them.
@@ -20,6 +22,17 @@
     background-color: var(--asignua-rte-toolbar-bg, var(--color-white, #fff));
     border-top-left-radius: var(--radius-lg, 0.5rem);
     border-top-right-radius: var(--radius-lg, 0.5rem);
+}
+
+/*
+ * `initial` makes var(--asignua-rte-sticky-offset) fall through to Filament's own variable, which
+ * must win in two places: inside a modal (its measured header height) and on a field that sets
+ * ->stickyOffset() (an inline --fi-fo-rich-editor-sticky-offset on the wrapper). Filament defines
+ * that variable on every editor, so the plugin offset has to come FIRST in the chain above.
+ */
+.fi-modal,
+.fi-fo-rich-editor[style*='--fi-fo-rich-editor-sticky-offset'] {
+    --asignua-rte-sticky-offset: initial;
 }
 
 .dark .fi-fo-rich-editor .fi-fo-rich-editor-toolbar {

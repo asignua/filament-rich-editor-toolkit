@@ -15,7 +15,8 @@ use Tiptap\Utils\HTML;
  * the tag together with the video or map: everything missing from the schema is treated as
  * garbage and disappears on save.
  *
- * Only an iframe whose `src` passes {@see EmbedSource::allows()} becomes a node: the HTML goes
+ * Only an iframe whose `src` passes {@see EmbedSource::allows()} becomes a node (after a
+ * recognised video link is rebuilt to its built-in form, {@see EmbedIframe::canonicalSrc()}): the HTML goes
  * to the public site as stored, and the check in the "Embed" modal cannot see what was pasted
  * from the clipboard or typed in the source view.
  *
@@ -50,7 +51,7 @@ class IframeNode extends Node
             [
                 'tag' => 'iframe',
                 // A disallowed source means no node at all, like any tag outside the schema.
-                'getAttrs' => static fn (DOMElement $node): ?bool => EmbedSource::allows($node->getAttribute('src')) ? null : false,
+                'getAttrs' => static fn (DOMElement $node): ?bool => EmbedSource::allows(EmbedIframe::canonicalSrc($node->getAttribute('src'))) ? null : false,
             ],
         ];
     }
@@ -61,7 +62,10 @@ class IframeNode extends Node
     public function addAttributes(): array
     {
         return [
-            'src' => [],
+            // A recognised video link in another form (YouTube's own embed code) is rebuilt.
+            'src' => [
+                'parseHTML' => static fn (DOMElement $node): ?string => EmbedIframe::canonicalSrc($node->getAttribute('src')) ?: null,
+            ],
             'width' => [],
             'height' => [],
             'title' => [],

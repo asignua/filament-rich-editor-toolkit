@@ -60,8 +60,17 @@ class EmbedPlugin implements RichContentPlugin
      */
     public function getTipTapJsExtensions(): array
     {
+        // The editor forces the same sandbox / allow / referrerpolicy the renderer does, so a
+        // node built from JSON cannot show an unsandboxed iframe in the panel either.
+        $hardening = EmbedIframe::hardening();
+
         return [
-            Assets::url('embed', ['host' => EmbedSource::entries()]),
+            Assets::url('embed', [
+                'host' => EmbedSource::entries(),
+                'sandbox' => isset($hardening['sandbox']) ? [$hardening['sandbox']] : [],
+                'allow' => isset($hardening['allow']) ? [$hardening['allow']] : [],
+                'referrerpolicy' => isset($hardening['referrerpolicy']) ? [$hardening['referrerpolicy']] : [],
+            ]),
         ];
     }
 

@@ -85,4 +85,10 @@ class VideoEmbedTest extends TestCase
         $this->assertNull(VideoEmbed::oembedUrl('youtube', 'abcdef'));
         $this->assertStringContainsString('vimeo.com/api/oembed.json', (string) VideoEmbed::oembedUrl('vimeo', '123456'));
     }
+
+    public function test_a_playlist_or_channel_embed_is_not_a_video_id(): void
+    {
+        $this->assertNull(VideoEmbed::parse('https://www.youtube.com/embed/videoseries?list=PLabcdefghij'));
+        $this->assertNull(VideoEmbed::parse('https://www.youtube.com/embed/live_stream?channel=UCabc'));
+    }
 }

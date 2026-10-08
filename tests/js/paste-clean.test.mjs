@@ -516,6 +516,145 @@ test('existingContent mode is idempotent', () => {
     assert.equal(clean(once, BUTTON), once)
 })
 
+test('existingContent: mentions and merge tags keep their data-id', () => {
+    const out = clean(
+        '<p style="color:red">Hello <span data-type="mergeTag" data-id="name">Name</span> and ' +
+            '<span data-type="mention" data-id="7" data-label="Ann">Ann</span></p>',
+        BUTTON,
+    )
+
+    assert.equal(countOf(out, 'p > span[data-type="mergeTag"][data-id="name"]'), 1)
+    assert.equal(countOf(out, 'p > span[data-type="mention"][data-id="7"]'), 1)
+    assert.ok(!/color:red/.test(out))
+    assert.equal(clean(out, BUTTON), out)
+})
+
+test('existingContent: grid, details and lead nodes are kept, their junk attributes are not', () => {
+    const out = clean(
+        '<div data-type="grid" data-cols="2" data-from-breakpoint="lg" class="grid-layout" style="--cols: 2">' +
+            '<div data-type="gridColumn" data-col-span="1" style="grid-column: span 1"><p style="color:red">A</p></div>' +
+            '<div data-type="gridColumn" data-col-span="1"><p>B</p></div></div>' +
+            '<details open><summary>More</summary><div data-type="detailsContent"><p>Body</p></div></details>' +
+            '<div class="lead extra" style="x:y">Lead text</div>',
+        BUTTON,
+    )
+
+    assert.equal(countOf(out, 'div[data-type="grid"][data-cols="2"][data-from-breakpoint="lg"]'), 1)
+    assert.equal(countOf(out, 'div[data-type="grid"] > div[data-type="gridColumn"][data-col-span="1"]'), 2)
+    assert.equal(countOf(out, 'details[open] > summary'), 1)
+    assert.equal(countOf(out, 'details > div[data-type="detailsContent"] > p'), 1)
+    assert.equal(countOf(out, 'div.lead'), 1)
+    assert.equal(textOf(out), 'A B MoreBody Lead text')
+    assert.ok(!/color:red|style=|extra|grid-layout/.test(out), 'junk class/style is dropped')
+    assert.equal(clean(out, BUTTON), out, 'idempotent')
+})
+
+test('paste contract: grid, details and lead wrappers are still flattened', () => {
+    const out = clean('<div data-type="grid"><div data-type="gridColumn"><p>A</p></div></div><details><summary>S</summary><p>B</p></details>')
+
+    assert.equal(countOf(out, 'div, details, summary'), 0)
+})
+
+test('existingContent: target and rel of a link stay, on paste they go', () => {
+    const source = '<p><a href="https://a.test/x" target="_blank" rel="noopener noreferrer" class="c">l</a></p>'
+    const out = clean(source, BUTTON)
+
+    assert.equal(countOf(out, 'a[href="https://a.test/x"][target="_blank"][rel="noopener noreferrer"]'), 1)
+    assert.ok(!/class=/.test(out))
+    assert.equal(countOf(clean(source), 'a[target], a[rel]'), 0)
+    assert.equal(countOf(clean('<p><a href="https://a.test/x" target="_top">l</a></p>', BUTTON), 'a[target]'), 0)
+})
+
+test('a space inside a link href becomes %20 instead of being removed; the scheme check still sees through control characters', () => {
+    const out = clean(
+        '<p><a href="https://intranet.test/Shared Documents/Plan 2026.docx">doc</a> ' +
+            '<a href="  https://a.test/x  ">trim</a> <a href="java\tscript:alert(1)">evil</a> <a href="java script:alert(1)">evil2</a></p>',
+    )
+
+    assert.equal(countOf(out, 'a[href="https://intranet.test/Shared%20Documents/Plan%202026.docx"]'), 1)
+    assert.equal(countOf(out, 'a[href="https://a.test/x"]'), 1)
+    assert.ok(!/script/.test(out))
+    assert.equal(
+        countOf(clean('<p><a href="/a b/c">r</a></p>', BUTTON), 'a[href="/a%20b/c"]'),
+        1,
+        'the same in button mode',
+    )
+})
+
+// The "Clean format" command, run against a minimal fake of Filament's TipTap/ProseMirror.
+
+import factory from '../../resources/js/src/paste-clean.js'
+
+const commandWith = (selection, extra = {}) => {
+    globalThis.window = {
+        FilamentRichEditor: {
+            tiptap: {
+                core: { Extension: { create: (config) => config } },
+                pmModel: { DOMSerializer: {}, DOMParser: {} },
+            },
+        },
+    }
+
+    try {
+        return factory().addCommands().asignuaCleanFormat()({ state: { selection }, chain: () => ({}), ...extra })
+    } finally {
+        delete globalThis.window
+    }
+}
+
+test('clean format: an empty selection and a table cell selection are left alone', () => {
+    assert.equal(commandWith({ empty: true }), false)
+    assert.equal(commandWith({ empty: false, forEachCell: () => {} }), false)
+})
+
+test('clean format: the cleaned selection goes back as an open slice (replaceSelection), not as closed nodes', () => {
+    const calls = []
+    const slice = { openStart: 1, openEnd: 1 }
+    const selection = {
+        empty: false,
+        content: () => ({ content: { forEach: (fn) => fn({ type: { name: 'paragraph' } }) } }),
+    }
+    const pm = {
+        DOMSerializer: {
+            fromSchema: () => ({
+                serializeNode: () => Object.assign(dom.window.document.createElement('p'), { textContent: 'words' }),
+            }),
+        },
+        DOMParser: { fromSchema: () => ({ parseSlice: () => slice }) },
+    }
+
+    globalThis.window = {
+        FilamentRichEditor: { tiptap: { core: { Extension: { create: (config) => config } }, pmModel: pm } },
+    }
+    globalThis.document = dom.window.document
+    globalThis.DOMParser = dom.window.DOMParser
+
+    try {
+        const chain = {
+            command: (fn) => {
+                fn({ tr: { replaceSelection: (given) => calls.push(given) } })
+
+                return chain
+            },
+            insertContent: () => assert.fail('a closed insertContent would split the paragraph'),
+            deleteSelection: () => assert.fail('nothing was removed'),
+            run: () => true,
+        }
+
+        const result = factory().addCommands().asignuaCleanFormat()({
+            state: { selection, schema: {} },
+            chain: () => chain,
+        })
+
+        assert.equal(result, true)
+        assert.deepEqual(calls, [slice])
+    } finally {
+        delete globalThis.window
+        delete globalThis.document
+        delete globalThis.DOMParser
+    }
+})
+
 // --- idempotency --------------------------------------------------------
 
 const IDEMPOTENCE_CASES = [
@@ -557,3 +696,126 @@ for (const name of fixtures) {
         assert.equal(clean(out), out, 'not idempotent')
     })
 }
+
+// --- clean format over a REAL ProseMirror schema --------------------------
+// cleanSelectionMixedSlice rebuilds a Slice around top-level custom blocks; a fake cannot prove the
+// open ends it hands to replaceSelection are valid, so these run on prosemirror-model itself.
+
+import { Schema, Slice, Fragment, DOMSerializer, DOMParser as PmDOMParser } from 'prosemirror-model'
+
+const pmSchema = new Schema({
+    nodes: {
+        doc: { content: 'block+' },
+        paragraph: { group: 'block', content: 'text*', toDOM: () => ['p', 0], parseDOM: [{ tag: 'p' }] },
+        div: { group: 'block', content: 'block+', toDOM: () => ['div', 0], parseDOM: [{ tag: 'div' }] },
+        customBlock: {
+            group: 'block',
+            atom: true,
+            attrs: { id: { default: null }, config: { default: null } },
+            toDOM: (node) => ['div', { 'data-type': 'customBlock', 'data-id': node.attrs.id }],
+            parseDOM: [{ tag: 'div[data-type="customBlock"]', getAttrs: (el) => ({ id: el.getAttribute('data-id') }) }],
+        },
+        text: { group: 'inline' },
+    },
+})
+
+const para = (text) => pmSchema.nodes.paragraph.create(null, text ? pmSchema.text(text) : null)
+const block = () => pmSchema.nodes.customBlock.create({ id: 'video', config: '{"url":"x"}' })
+const wrap = (...children) => pmSchema.nodes.div.create(null, children)
+
+// Runs asignuaCleanFormat over a selection whose content() is `slice`; returns what was handed
+// to tr.replaceSelection (undefined when nothing was inserted).
+const runCleanFormat = (slice) => {
+    let given
+    const chain = {
+        command: (fn) => {
+            fn({ tr: { replaceSelection: (s) => (given = s) } })
+
+            return chain
+        },
+        deleteSelection: () => chain,
+        run: () => true,
+    }
+
+    globalThis.window = {
+        FilamentRichEditor: {
+            tiptap: {
+                core: { Extension: { create: (config) => config } },
+                pmModel: {
+                    // prosemirror-model reaches for a global `document`, which node lacks: hand it jsdom's.
+                    DOMSerializer: {
+                        fromSchema: (schema) => {
+                            const serializer = DOMSerializer.fromSchema(schema)
+
+                            return {
+                                serializeNode: (node) => serializer.serializeNode(node, { document: dom.window.document }),
+                            }
+                        },
+                    },
+                    DOMParser: PmDOMParser,
+                },
+            },
+        },
+    }
+    globalThis.document = dom.window.document
+    globalThis.DOMParser = dom.window.DOMParser
+
+    try {
+        factory().addCommands().asignuaCleanFormat()({
+            state: { selection: { empty: false, content: () => slice }, schema: pmSchema },
+            chain: () => chain,
+        })
+    } finally {
+        delete globalThis.window
+        delete globalThis.document
+        delete globalThis.DOMParser
+    }
+
+    return given
+}
+
+const texts = (slice) => {
+    const out = []
+
+    slice.content.forEach((node) => out.push(node.type.name === 'customBlock' ? '[block]' : node.textContent))
+
+    return out
+}
+
+test('clean format: a selection [open paragraph, custom block, open paragraph] keeps the block and both open ends', () => {
+    const original = new Slice(Fragment.fromArray([para('ne'), block(), para('tw')]), 1, 1)
+    const slice = runCleanFormat(original)
+
+    assert.deepEqual(texts(slice), ['ne', '[block]', 'tw'])
+    assert.equal(slice.content.child(1).attrs.id, 'video')
+    assert.equal(slice.content.child(1).attrs.config, '{"url":"x"}', 'the block is put back as the same node')
+    assert.equal(slice.openStart, 1)
+    assert.equal(slice.openEnd, 1)
+    assert.doesNotThrow(() => pmSchema.nodes.doc.create(null, [para('a')]).replace(1, 1, slice))
+})
+
+test('clean format: a selection that starts or ends with a custom block is closed on that side', () => {
+    const startsWith = runCleanFormat(new Slice(Fragment.fromArray([block(), para('tw')]), 1, 1))
+
+    assert.deepEqual(texts(startsWith), ['[block]', 'tw'])
+    assert.equal(startsWith.openStart, 0)
+    assert.equal(startsWith.openEnd, 1)
+
+    const endsWith = runCleanFormat(new Slice(Fragment.fromArray([para('ne'), block()]), 1, 1))
+
+    assert.deepEqual(texts(endsWith), ['ne', '[block]'])
+    assert.equal(endsWith.openStart, 1)
+    assert.equal(endsWith.openEnd, 0)
+})
+
+test('clean format: an open end deeper than the cleaned edge node is clamped to its depth', () => {
+    // div > paragraph is flattened to a paragraph by cleaning, so openStart/openEnd 2 no longer fit.
+    const original = new Slice(Fragment.fromArray([wrap(para('ne')), block(), wrap(para('tw'))]), 2, 2)
+    const slice = runCleanFormat(original)
+
+    assert.deepEqual(texts(slice), ['ne', '[block]', 'tw'])
+    assert.equal(slice.content.firstChild.type.name, 'paragraph')
+    assert.equal(slice.openStart, 1)
+    assert.equal(slice.openEnd, 1)
+    assert.doesNotThrow(() => pmSchema.nodes.doc.create(null, [para('a')]).replace(1, 1, slice))
+})

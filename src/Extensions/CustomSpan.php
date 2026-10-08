@@ -18,7 +18,10 @@ use Tiptap\Utils\HTML;
  *
  * The attributes arrive globally ({@see CustomAttributes}); this class holds only the parse
  * rule and the render. `span.color` is handed to its owner explicitly, otherwise two marks
- * would sit on the same text and the output would be a nested `<span><span>`.
+ * would sit on the same text and the output would be a nested `<span><span>`. The same goes for every span
+ * that carries `data-type` — Filament's mention and merge-tag nodes: the editor parses all MARK
+ * rules before the NODE rules of the same priority, so without this the node would come back
+ * as plain text with a mark (its `data-id` lost) after a copy-paste in the browser.
  *
  * A bare `<span>` without attributes is kept as well: in migrated markup it is often a CSS
  * hook on its own (`.bg-primary span { … }`), and losing the tag broke styles just like
@@ -45,7 +48,7 @@ class CustomSpan extends Mark
             [
                 'tag' => 'span',
                 // null = match, false = skip (the tiptap-php convention).
-                'getAttrs' => static fn (DOMElement $node): mixed => in_array(
+                'getAttrs' => static fn (DOMElement $node): mixed => $node->hasAttribute('data-type') || in_array(
                     'color',
                     preg_split('/\s+/', trim($node->getAttribute('class'))) ?: [],
                     true,

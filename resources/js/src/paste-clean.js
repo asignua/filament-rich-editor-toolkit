@@ -70,7 +70,7 @@ const BLOCK_WRAPPERS = new Set([
 // Tags that count as "block" for the unwrap-or-paragraph decision.
 const BLOCK_TAGS =
     'address,article,aside,blockquote,details,div,dl,fieldset,figcaption,figure,footer,' +
-    'form,h1,h2,h3,h4,h5,h6,header,hr,li,main,nav,ol,p,pre,section,table,ul'
+    'form,h1,h2,h3,h4,h5,h6,header,hr,iframe,li,main,nav,ol,p,pre,section,table,ul'
 
 const BOLD_WEIGHTS = new Set(['bold', 'bolder', '500', '600', '700', '800', '900'])
 
@@ -427,28 +427,68 @@ const isOwnSrc = (src, origin) => {
 // are stripped (see stripAttributes).
 const SCRIPT_SCHEME = /^(javascript|vbscript|data|file):/i
 
+// Nodes of Filament's own editor that are plain <div>/<details> in HTML: the grid and its
+// columns, the details block and its body, the lead paragraph. In button mode (existing
+// content) they are structure, not clipboard wrappers: unwrapping them would flatten a layout
+// the editor itself produced. Only the attributes the node parses back are kept.
+const EDITOR_STRUCTURE =
+    'details, summary, div[data-type="grid"], div[data-type="gridColumn"], div[data-type="detailsContent"], div.lead'
+const STRUCTURE_ATTRIBUTES = ['data-type', 'data-cols', 'data-col-span', 'data-from-breakpoint', 'open']
+
 const stripAttributes = (el, keepLinkPrefixes, existingContent) => {
     const name = tagOf(el)
     const keep = {}
 
     if (name === 'a') {
-        // Control characters inside the scheme are a classic way around the check.
-        const href = (el.getAttribute('href') || '').replace(/[\x00-\x20]/g, '')
+        // Control characters inside the scheme are a classic way around the check, so the
+        // tests below run on a copy with every control character and space removed. What is
+        // KEPT is the original: a space inside a path (`Shared Documents/Plan 2026.docx`) is
+        // part of the address, removing it would point the link somewhere else. Browsers drop
+        // tab and newline from a URL themselves; a space becomes %20.
+        const raw = (el.getAttribute('href') || '').trim()
+        const href = raw.replace(/[\x00-\x20]/g, '')
+        const value = raw.replace(/[\x00-\x1f]/g, '').replace(/ /g, '%20')
 
         if (/^(https?|mailto|tel):/i.test(href)) {
-            keep.href = href
+            keep.href = value
         } else if (existingContent && href !== '' && !SCRIPT_SCHEME.test(href)) {
             // "Clean format" button mode: the link is already in the document,
             // so a relative path, an in-page anchor or another scheme is the
             // author's, not clipboard junk (on paste they are Word's _Toc
             // anchors and local file paths). Only script schemes are refused;
             // the Link mark validates the rest.
-            keep.href = href
+            keep.href = value
         } else if (keepLinkPrefixes.some((prefix) => href.startsWith(prefix))) {
             // "Clean format" button mode: hrefs with a configured prefix (e.g. an
             // internal-link sentinel) are not clipboard junk - they are something
             // the editor deliberately stores.
-            keep.href = href
+            keep.href = value
+        }
+
+        // A link the editor set to "open in a new tab" (Filament's link action) is the
+        // author's choice, not clipboard junk; on paste the target is dropped as before.
+        if (existingContent && keep.href !== undefined) {
+            if (el.getAttribute('target') === '_blank') {
+                keep.target = '_blank'
+            }
+
+            const rel = el.getAttribute('rel') || ''
+
+            if (/^[a-z]+( [a-z]+)*$/i.test(rel)) {
+                keep.rel = rel
+            }
+        }
+    } else if (existingContent && el.matches(EDITOR_STRUCTURE)) {
+        for (const attribute of STRUCTURE_ATTRIBUTES) {
+            const value = el.getAttribute(attribute)
+
+            if (value !== null) {
+                keep[attribute] = value
+            }
+        }
+
+        if (name === 'div' && el.classList.contains('lead')) {
+            keep.class = 'lead'
         }
     } else if (name === 'td' || name === 'th') {
         for (const attribute of ['colspan', 'rowspan']) {
@@ -515,7 +555,7 @@ const sweepElements = (body, doc, keepLinkPrefixes, existingContent) => {
             continue
         }
 
-        if (!KEEP.has(name)) {
+        if (!KEEP.has(name) && !(existingContent && node.matches(EDITOR_STRUCTURE))) {
             unwrap(node)
 
             continue
@@ -536,16 +576,22 @@ const sweepElements = (body, doc, keepLinkPrefixes, existingContent) => {
 // With `existingContent` the same goes for nodes the editor schema itself
 // produced: an embed <iframe> (DROP_WITH_CONTENTS on paste), an <img> inserted
 // by URL or stored on another host (the image triage would remove it) and a
-// <pre> code block (it would be unwrapped and its whitespace collapsed). They
-// already passed the schema, so there is nothing to clean in them. An <img> is
-// inline: its token is plain text in place, never a paragraph of its own.
+// <pre> code block (it would be unwrapped and its whitespace collapsed), and a
+// mention / merge-tag span (unwrapped into plain text, `data-id` lost). They
+// already passed the schema, so there is nothing to clean in them. An <img> and
+// those spans are inline: the token is plain text in place, never a paragraph
+// of its own. The grid, details and lead nodes are NOT tokens: their content is
+// cleaned, only the wrapper is kept (see EDITOR_STRUCTURE).
 
 const BLOCK_TOKEN_PREFIX = '\uE000asignua-custom-block-'
 const BLOCK_TOKEN_SUFFIX = '\uE001'
 const BLOCK_TOKEN = /\uE000asignua-custom-block-(\d+)\uE001/
 
+// Inline tokens: an image and the mention / merge-tag spans (`data-id` is all they are).
+const INLINE_PROTECTED = new Set(['img', 'span'])
+
 const PROTECTED_BLOCKS = 'div[data-type="customBlock"]'
-const PROTECTED_EDITOR_NODES = 'iframe, pre, img'
+const PROTECTED_EDITOR_NODES = 'iframe, pre, img, span[data-type="mention"], span[data-type="mergeTag"]'
 
 const extractCustomBlocks = (body, doc, existingContent) => {
     const saved = []
@@ -557,7 +603,7 @@ const extractCustomBlocks = (body, doc, existingContent) => {
             continue
         }
 
-        const block = tagOf(el) !== 'img'
+        const block = !INLINE_PROTECTED.has(tagOf(el))
         const token = doc.createTextNode(`${BLOCK_TOKEN_PREFIX}${saved.length}${BLOCK_TOKEN_SUFFIX}`)
 
         saved.push({ el, block })
@@ -828,6 +874,10 @@ export const cleanPastedHtml = (html, options = {}) => {
             continue
         }
 
+        if (existingContent && el.matches(EDITOR_STRUCTURE)) {
+            continue
+        }
+
         if (hasBlockChild(el)) {
             unwrap(el)
         } else if (!isBlank(el)) {
@@ -867,28 +917,100 @@ export const cleanPastedHtml = (html, options = {}) => {
 
 // --- "clean format" button command --------------------------------------
 
+const cleanNodesHtml = (nodes, serializer, keepLinkPrefixes) => {
+    const container = globalThis.document.createElement('div')
+
+    for (const node of nodes) {
+        container.appendChild(serializer.serializeNode(node))
+    }
+
+    const cleaned = cleanPastedHtml(container.innerHTML, {
+        keepLinkPrefixes,
+        keepCustomBlocks: true,
+        existingContent: true,
+    })
+
+    return typeof cleaned === 'string' ? cleaned.trim() : ''
+}
+
+// How many levels deep a slice can be open at the edge of `node` (0 for an atom or a text node).
+const openDepth = (node, edge) => {
+    let depth = 0
+
+    while (node && !node.isLeaf && !node.isText) {
+        depth++
+        node = node[edge]
+    }
+
+    return depth
+}
+
+const hasTopLevelCustomBlock = (slice) => {
+    let found = false
+
+    slice.content.forEach((node) => {
+        if (node.type.name === 'customBlock') {
+            found = true
+        }
+    })
+
+    return found
+}
+
 /**
- * Selection -> array of JSON nodes with the formatting cleaned.
+ * Selection -> a ProseMirror Slice with the formatting cleaned, for a selection that holds no
+ * top-level custom block.
+ *
+ * The slice keeps its OPEN ends, the way a paste does (`parseSlice`, then `replaceSelection`):
+ * the words picked out of the middle of a paragraph are put back INSIDE that paragraph instead of
+ * as a closed paragraph of their own, which would split it in three.
+ *
+ * @returns {object|null} null = nothing is left after cleaning (the selection is deleted)
+ */
+const cleanSelectionSlice = (state, DOMSerializer, PmDOMParser, keepLinkPrefixes) => {
+    const serializer = DOMSerializer.fromSchema(state.schema)
+    const nodes = []
+
+    state.selection.content().content.forEach((node) => nodes.push(node))
+
+    const cleaned = cleanNodesHtml(nodes, serializer, keepLinkPrefixes)
+
+    if (cleaned === '') {
+        return null
+    }
+
+    const dom = new globalThis.DOMParser().parseFromString(cleaned, 'text/html')
+
+    return PmDOMParser.fromSchema(state.schema).parseSlice(dom.body, { preserveWhitespace: true })
+}
+
+/**
+ * A selection with a top-level custom block -> a Slice with the formatting cleaned.
  *
  * TOP-level custom blocks bypass HTML entirely: in the editor's node spec
  * `preview`/`label` have `rendered: false`, so DOMSerializer does not emit them
- * and after re-insertion the editor would show an empty box. The node JSON
- * (`toJSON()`) carries all attributes. A block nested in another block (li,
- * blockquote) goes through HTML and survives thanks to keepCustomBlocks - with
+ * and after re-insertion the editor would show an empty box. The node itself
+ * carries all attributes, so it is put back as is. A block nested in another block
+ * (li, blockquote) goes through HTML and survives thanks to keepCustomBlocks - with
  * its config/id, but without the editor preview until reload; the front end loses
  * nothing (it renders from config).
+ *
+ * The runs of ordinary nodes between the blocks are cleaned and parsed back; the slice keeps
+ * the ORIGINAL open ends, so a selection that starts and ends in the middle of two paragraphs
+ * still joins them instead of splitting them.
  *
  * @param {object} state ProseMirror state
  * @param {object} DOMSerializer from pmModel (passed in by the factory - the module
  *   itself reads no editor globals, otherwise it would stop loading under node --test)
  * @param {object} PmDOMParser from pmModel, likewise from the factory
  * @param {string[]} keepLinkPrefixes href prefixes to keep
- * @returns {Array<object>}
+ * @returns {object|null} null = nothing is left after cleaning
  */
-const cleanSelectionContent = (state, DOMSerializer, PmDOMParser, keepLinkPrefixes) => {
+const cleanSelectionMixedSlice = (state, DOMSerializer, PmDOMParser, keepLinkPrefixes) => {
     const serializer = DOMSerializer.fromSchema(state.schema)
     const parser = PmDOMParser.fromSchema(state.schema)
-    const content = []
+    const original = state.selection.content()
+    const nodes = []
     let buffer = []
 
     const flush = () => {
@@ -896,33 +1018,23 @@ const cleanSelectionContent = (state, DOMSerializer, PmDOMParser, keepLinkPrefix
             return
         }
 
-        const container = globalThis.document.createElement('div')
-
-        for (const node of buffer) {
-            container.appendChild(serializer.serializeNode(node))
-        }
+        const cleaned = cleanNodesHtml(buffer, serializer, keepLinkPrefixes)
 
         buffer = []
 
-        const cleaned = cleanPastedHtml(container.innerHTML, {
-            keepLinkPrefixes,
-            keepCustomBlocks: true,
-            existingContent: true,
-        })
-
-        if (typeof cleaned !== 'string' || cleaned.trim() === '') {
+        if (cleaned === '') {
             return
         }
 
         const dom = new globalThis.DOMParser().parseFromString(cleaned, 'text/html')
 
-        parser.parse(dom.body).content.forEach((node) => content.push(node.toJSON()))
+        parser.parse(dom.body).content.forEach((node) => nodes.push(node))
     }
 
-    state.selection.content().content.forEach((node) => {
+    original.content.forEach((node) => {
         if (node.type.name === 'customBlock') {
             flush()
-            content.push(node.toJSON())
+            nodes.push(node)
         } else {
             buffer.push(node)
         }
@@ -930,7 +1042,18 @@ const cleanSelectionContent = (state, DOMSerializer, PmDOMParser, keepLinkPrefix
 
     flush()
 
-    return content
+    if (nodes.length === 0) {
+        return null
+    }
+
+    // The original open ends are kept, but never deeper than the cleaned edge node can be open:
+    // a custom block is atomic (depth 0), and cleaning may flatten a wrapper (a div, a nested
+    // list) so the first or last node is shallower than it was. A deeper end would make
+    // replaceSelection throw.
+    const openStart = Math.min(original.openStart, openDepth(nodes[0], 'firstChild'))
+    const openEnd = Math.min(original.openEnd, openDepth(nodes[nodes.length - 1], 'lastChild'))
+
+    return new original.constructor(original.content.constructor.fromArray(nodes), openStart, openEnd)
 }
 
 // --- Filament contract --------------------------------------------------
@@ -975,23 +1098,38 @@ export default () => {
                             return false
                         }
 
-                        let content
+                        // A cell selection holds bare rows: cleaned and put back they would
+                        // replace several cells with plain paragraphs and wreck the table.
+                        if (typeof state.selection.forEachCell === 'function') {
+                            return false
+                        }
 
                         try {
-                            content = cleanSelectionContent(state, DOMSerializer, PmDOMParser, keepLinkPrefixes)
+                            // Put the result back as an open slice, exactly like a paste (see
+                            // cleanSelectionSlice); a selection with a top-level custom block
+                            // keeps the block itself (see cleanSelectionMixedSlice).
+                            const clean = hasTopLevelCustomBlock(state.selection.content())
+                                ? cleanSelectionMixedSlice
+                                : cleanSelectionSlice
+                            const slice = clean(state, DOMSerializer, PmDOMParser, keepLinkPrefixes)
+
+                            if (slice === null) {
+                                return chain().deleteSelection().run()
+                            }
+
+                            // One transaction = one Ctrl+Z step.
+                            return chain()
+                                .command(({ tr }) => {
+                                    tr.replaceSelection(slice)
+
+                                    return true
+                                })
+                                .run()
                         } catch (error) {
                             console.error('[rich-editor-toolkit] clean format failed, content unchanged:', error)
 
                             return false
                         }
-
-                        if (content.length === 0) {
-                            return chain().deleteSelection().run()
-                        }
-
-                        // insertContent replaces the current selection; one
-                        // transaction = one Ctrl+Z step.
-                        return chain().insertContent(content).run()
                     },
             }
         },

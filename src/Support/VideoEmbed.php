@@ -13,6 +13,9 @@ namespace Asignua\RichEditorToolkit\Support;
  */
 final class VideoEmbed
 {
+    /** Path words that look like a YouTube id (6-20 characters) but are not one. */
+    private const array NOT_AN_ID = ['videoseries', 'live_stream'];
+
     /**
      * `hash` is the privacy hash of an unlisted Vimeo video (`vimeo.com/123/abcdef` or
      * `?h=abcdef`): without it the player answers "video not available".
@@ -41,6 +44,13 @@ final class VideoEmbed
 
         foreach ([[$youtube, 'youtube'], [$youtubeShort, 'youtube'], [$vimeo, 'vimeo'], [$vimeoPlayer, 'vimeo']] as [$pattern, $provider]) {
             if (preg_match($pattern, $url, $matches) === 1) {
+                // `embed/videoseries?list=…` is a playlist and `embed/live_stream?channel=…` a
+                // channel: their "id" is a path word, and rebuilt without the query the player
+                // shows "Video unavailable".
+                if (in_array(strtolower($matches[1]), self::NOT_AN_ID, true)) {
+                    return null;
+                }
+
                 $hash = null;
 
                 if ($provider === 'vimeo') {

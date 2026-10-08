@@ -102,8 +102,10 @@ cleanup too and keeps its `class`/`style`.
 The `cleanFormat` button runs the same cleanup on the **selected** fragment of existing content. Unlike Filament's
 `clearFormatting` it keeps headings and lists (that one runs `clearNodes().unsetAllMarks()`). What the editor itself
 put there survives untouched: custom blocks, embeds (`<iframe>`), images (also ones inserted by URL or stored on another
-host) and code blocks. Every link stays too (relative paths, `#anchors`, `tel:`), except the script schemes
-`javascript:`, `vbscript:`, `data:` and `file:`. A prefix you list is kept whatever its scheme:
+host), code blocks, mentions and merge tags, grid, details and the lead paragraph. Every link stays too (relative
+paths, `#anchors`, `tel:`, and a link's `target`/`rel`), except the script schemes
+`javascript:`, `vbscript:`, `data:` and `file:`. The result goes back like a paste, so a few words picked out of a
+paragraph stay in it, and a table cell selection is left alone. A prefix you list is kept whatever its scheme:
 
 ```php
 PasteCleanPlugin::make()->keepLinkPrefixes(['/internal-link/'])
@@ -118,7 +120,7 @@ Keeps `class`, `id`, `style` and further attributes you list, on paragraphs, hea
 details, grid, spans and generic `<div>` containers. A name the node declares itself belongs to the node and wins: an
 `<img>` keeps `class` and `style` but **not** `id` (Filament's image node owns `id` as its media key, stored as
 `data-id`), and an extra name such as `title` is not kept on a node that has its own `title` (image, iframe). It also stops legacy markup from collapsing: `<div class="row"><img>
-<span>…</span></div>` keeps its direct children, and `<li><div>…</div></li>` stays a list item.
+<span>…</span></div>` keeps its direct children, and `<li><div>…</div></li>` stays a list item. A `<div>` that wraps an `<iframe>` (a responsive embed wrapper) keeps it inside. A `style`/`class` that another extension writes itself is dropped only on its own tag (`text-align` on paragraphs and headings, `width`/`height` on images, `lead` and the grid classes on `div`); on a `<td>`, `<table>`, `<iframe>` or `<p class="lead">` it is yours and stays.
 
 ```php
 // config/rich-editor-toolkit.php
@@ -147,7 +149,7 @@ allow-list, and inserts a bare `<iframe>`. A video link is **rebuilt** from prov
 (`youtube-nocookie.com`, no autoplay; an unlisted Vimeo video keeps its privacy hash), never copied. Pasted or
 hand-written iframes pass the same check at once in the browser and when the HTML is parsed on the server; an iframe from
 any other host does not exist as a node and is dropped. The check runs again when a node is rendered, so JSON content
-(`RichEditor::json()`, an array handed to the renderer) cannot smuggle one in either. A `host/path` entry matches on a
+(`RichEditor::json()`, an array handed to the renderer) cannot smuggle one in either. The same goes for the admin editor: an iframe node whose `src` fails the list is drawn as an inert placeholder, and the configured `sandbox`, `allow` and `referrerpolicy` are forced there too. YouTube's own embed code (`www.youtube.com/embed/ID`) and `watch?v=` / `youtu.be` / `vimeo.com` iframes are rebuilt to the `youtube-nocookie.com` / `player.vimeo.com` form rather than dropped. A `host/path` entry matches on a
 segment boundary (the host is case-insensitive, the path is not), and a path with dot segments (`/maps/embed/../../url`), `%2e`, `%2f` or a backslash is refused.
 
 ```php
@@ -181,6 +183,8 @@ Filament 5 has `RichEditor::stickyToolbar()` per field; this makes it the defaul
 where it silently does nothing, because a section, tab or repeater item clips with `overflow: hidden` (which turns it
 into a scroll container that `position: sticky` cannot escape). Those containers are switched to `overflow: clip`.
 Run `php artisan filament:assets` so the stylesheet is published.
+
+Offset precedence: a field's own `->stickyOffset()`, then the plugin's `offset()`, then Filament's own default (the topbar, or inside a modal the height of its sticky header); the plugin offset does not apply inside a modal.
 
 Opt a single field out with `RichEditor::make('body')->withoutStickyToolbar()` (it sets `data-toolkit-sticky="off"`, which the stylesheet respects, even over Filament's native `->stickyToolbar()`).
 

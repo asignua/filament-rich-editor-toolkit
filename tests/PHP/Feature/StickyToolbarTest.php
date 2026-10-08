@@ -50,6 +50,19 @@ class StickyToolbarTest extends TestCase
         $this->assertStringContainsString('--asignua-rte-sticky-offset', $css);
     }
 
+    public function test_the_plugin_offset_comes_before_filaments_variable_which_wins_only_in_modals_and_on_fields_with_their_own(): void
+    {
+        $css = (string) file_get_contents(__DIR__.'/../../../resources/dist/filament-rich-editor-toolkit.css');
+
+        // Filament defines its variable on EVERY editor, so it can only be a fallback.
+        $this->assertMatchesRegularExpression(
+            '/top:\s*var\(\s*--asignua-rte-sticky-offset,\s*var\(--fi-fo-rich-editor-sticky-offset/',
+            $css,
+        );
+        $this->assertStringContainsString(".fi-fo-rich-editor[style*='--fi-fo-rich-editor-sticky-offset']", $css);
+        $this->assertMatchesRegularExpression('/\.fi-modal,[^{]*\{\s*--asignua-rte-sticky-offset:\s*initial/', $css);
+    }
+
     public function test_a_field_can_opt_out_and_the_stylesheet_respects_it(): void
     {
         $editor = \Filament\Forms\Components\RichEditor::make('body')->withoutStickyToolbar();

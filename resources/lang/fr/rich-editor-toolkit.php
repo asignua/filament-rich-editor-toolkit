@@ -13,5 +13,6 @@ return [
     'image_url_url' => 'URL de l’image',
     'image_url_hint' => 'L’image est chargée depuis l’autre site, elle n’est pas copiée.',
     'image_url_invalid' => 'Saisissez une adresse http(s) complète.',
+    'image_url_host_not_allowed' => 'Les images de ce site ne sont pas autorisées.',
     'image_url_alt' => 'Texte alternatif',
 ];

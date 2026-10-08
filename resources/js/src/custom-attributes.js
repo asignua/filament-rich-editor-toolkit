@@ -40,25 +40,40 @@ export const DEFAULT_TYPES = [
     'customSpan',
 ]
 
-// Classes that another Filament extension writes itself: `textColor` adds `color`, `lead` adds
-// `lead`, `grid` adds `grid-layout`. HTML merging JOINS classes instead of replacing them, so
-// without this filter the output would be `class="color color"`.
-export const OWNED_CLASSES = ['color', 'lead', 'grid-layout']
+// Classes that another Filament extension writes itself, with the tags that extension exists
+// for: `textColor` adds `color` to a span, `lead` adds `lead` to a div, `grid` adds
+// `grid-layout` to a div. HTML merging JOINS classes instead of replacing them, so without this
+// filter the output would be `class="color color"`. On any other tag the class is the author's.
+export const OWNED_CLASSES = {
+    color: ['span'],
+    lead: ['div'],
+    'grid-layout': ['div'],
+}
 
-// Same for declarations: `text-align` belongs to TextAlign, `--color`/`--dark-color` to
-// textColor, `--cols` to grid, `height`/`width` to image. A hand-written `text-align: center`
-// is not lost: TextAlign picks it up and renders it.
-export const OWNED_STYLES = ['text-align', '--color', '--dark-color', '--cols', 'height', 'width']
+// Same for declarations: `text-align` belongs to TextAlign (paragraph and headings only),
+// `--color`/`--dark-color` to textColor, `--cols` to grid, `height`/`width` to image. A
+// hand-written `text-align: center` on a <p> is not lost: TextAlign picks it up. On a <td> or a
+// <div> nobody owns it, so it stays in `style`.
+export const OWNED_STYLES = {
+    'text-align': ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+    '--color': ['span'],
+    '--dark-color': ['span'],
+    '--cols': ['div'],
+    height: ['img'],
+    width: ['img'],
+}
 
-export const filterClass = (value) => {
+const isOwned = (table, key, tag) => (Object.hasOwn(table, key) ? table[key] : []).includes(tag)
+
+export const filterClass = (value, tag = '') => {
     const classes = (value || '')
         .split(/\s+/)
-        .filter((name) => name !== '' && !OWNED_CLASSES.includes(name))
+        .filter((name) => name !== '' && !isOwned(OWNED_CLASSES, name, tag))
 
     return classes.length ? classes.join(' ') : null
 }
 
-export const filterStyle = (value) => {
+export const filterStyle = (value, tag = '') => {
     const declarations = (value || '')
         .split(';')
         .map((declaration) => declaration.trim())
@@ -67,7 +82,7 @@ export const filterStyle = (value) => {
                 return false
             }
 
-            return !OWNED_STYLES.includes(declaration.split(':')[0].trim().toLowerCase())
+            return !isOwned(OWNED_STYLES, declaration.split(':')[0].trim().toLowerCase(), tag)
         })
 
     return declarations.length ? declarations.join('; ') : null
@@ -79,21 +94,24 @@ export const blankToNull = (value) => {
     return trimmed === '' ? null : trimmed
 }
 
-const filterFor = (name) => {
+const parseValue = (name, element) => {
+    const value = element.getAttribute(name)
+    const tag = element.tagName.toLowerCase()
+
     if (name === 'class') {
-        return filterClass
+        return filterClass(value, tag)
     }
 
     if (name === 'style') {
-        return filterStyle
+        return filterStyle(value, tag)
     }
 
-    return blankToNull
+    return blankToNull(value)
 }
 
 export const BLOCK_TAGS =
     'address,article,aside,blockquote,details,div,dl,fieldset,figcaption,figure,footer,' +
-    'form,h1,h2,h3,h4,h5,h6,header,hr,li,main,nav,ol,p,pre,section,table,ul'
+    'form,h1,h2,h3,h4,h5,h6,header,hr,iframe,li,main,nav,ol,p,pre,section,table,ul'
 
 export const hasBlockChild = (element) => element.querySelector(BLOCK_TAGS) !== null
 
@@ -108,7 +126,7 @@ export const buildAttributes = (names) =>
             name,
             {
                 default: null,
-                parseHTML: (element) => filterFor(name)(element.getAttribute(name)),
+                parseHTML: (element) => parseValue(name, element),
                 renderHTML: (attributes) => (attributes[name] ? { [name]: attributes[name] } : {}),
             },
         ]),
@@ -128,10 +146,14 @@ export default () => {
             return [
                 {
                     tag: 'span',
-                    // Any span except someone else's (textColor owns span.color). A bare <span>
+                    // Any span except someone else's: textColor owns span.color, and a span with
+                    // data-type is a node (mention, merge tag). ProseMirror tries every MARK rule
+                    // before the NODE rules of the same priority, so without this skip a copied
+                    // merge tag would come back as plain text with a mark. A bare <span>
                     // with no attributes is kept too: in legacy markup it is often a CSS hook
                     // on its own (`.bg-primary span { … }`).
-                    getAttrs: (element) => (element.classList?.contains('color') ? false : {}),
+                    getAttrs: (element) =>
+                        element.classList?.contains('color') || element.hasAttribute('data-type') ? false : {},
                 },
             ]
         },
