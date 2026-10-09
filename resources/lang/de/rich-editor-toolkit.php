@@ -25,4 +25,7 @@ return [
     'text_length_max' => ':attribute darf nicht länger als :max Zeichen sein.',
     'text_length_min' => ':attribute muss mindestens :min Zeichen lang sein.',
     'text_length_max_words' => ':attribute darf nicht mehr als :max Wörter enthalten.',
+    'source_code' => 'Quelltext',
+    'source_code_label' => 'HTML-Quelltext',
+    'source_code_unsupported' => 'Ein Teil des Markups wird von diesem Editor nicht unterstützt und wurde entfernt.',
 ];

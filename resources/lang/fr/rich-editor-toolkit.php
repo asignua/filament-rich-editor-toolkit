@@ -25,4 +25,7 @@ return [
     'text_length_max' => 'Le champ :attribute ne doit pas dépasser :max caractères.',
     'text_length_min' => 'Le champ :attribute doit contenir au moins :min caractères.',
     'text_length_max_words' => 'Le champ :attribute ne doit pas dépasser :max mots.',
+    'source_code' => 'Source',
+    'source_code_label' => 'Code source HTML',
+    'source_code_unsupported' => "Une partie du balisage n'est pas prise en charge par cet éditeur et a été supprimée.",
 ];

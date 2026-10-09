@@ -25,4 +25,7 @@ return [
     'text_length_max' => ':attribute mag niet langer zijn dan :max tekens.',
     'text_length_min' => ':attribute moet minimaal :min tekens bevatten.',
     'text_length_max_words' => ':attribute mag niet meer dan :max woorden bevatten.',
+    'source_code' => 'Bron',
+    'source_code_label' => 'HTML-bron',
+    'source_code_unsupported' => 'Een deel van de opmaak wordt niet ondersteund door deze editor en is verwijderd.',
 ];

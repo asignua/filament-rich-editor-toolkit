@@ -25,4 +25,7 @@ return [
     'text_length_max' => ':attribute alanı en fazla :max karakter olabilir.',
     'text_length_min' => ':attribute alanı en az :min karakter olmalıdır.',
     'text_length_max_words' => ':attribute alanı en fazla :max kelime içerebilir.',
+    'source_code' => 'Kaynak',
+    'source_code_label' => 'HTML kaynağı',
+    'source_code_unsupported' => 'İşaretlemenin bir kısmı bu düzenleyici tarafından desteklenmiyor ve kaldırıldı.',
 ];

@@ -1,5 +1,5 @@
 /*
- * Fullscreen and character counter (asignua/filament-rich-editor-toolkit).
+ * Fullscreen, character counter and source view (asignua/filament-rich-editor-toolkit).
  *
  * Hand-written, no build step. Loaded on request by the fullscreen / character-count JS
  * modules (a <link> they add themselves), so it is available with or without
@@ -71,6 +71,81 @@ html.asignua-rte-fullscreen-lock {
 
 .fi-fo-rich-editor.asignua-rte-fullscreen .asignua-rte-count {
     flex: 0 0 auto;
+}
+
+/* --- Source (HTML) view ------------------------------------------------------------- */
+
+/* The editing area is hidden, not removed: the editor keeps running and holds the document. */
+.fi-fo-rich-editor.asignua-rte-source-active .fi-fo-rich-editor-main {
+    display: none;
+}
+
+.asignua-rte-source {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 12rem;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 0;
+    border-radius: 0;
+    background-color: transparent;
+    color: var(--asignua-rte-source-color, var(--gray-900, #111827));
+    font-family: var(--asignua-rte-source-font, ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace);
+    font-size: 0.8125rem;
+    line-height: 1.55;
+    tab-size: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    resize: vertical;
+    overflow: auto;
+}
+
+.asignua-rte-source:focus-visible {
+    outline: 2px solid var(--primary-600, #4f46e5);
+    outline-offset: -2px;
+}
+
+.dark .asignua-rte-source {
+    color: var(--asignua-rte-source-color-dark, var(--gray-100, #f3f4f6));
+}
+
+.dark .asignua-rte-source:focus-visible {
+    outline-color: var(--primary-400, #818cf8);
+}
+
+.asignua-rte-source[readonly] {
+    cursor: default;
+    opacity: 0.8;
+}
+
+/* Fullscreen: the textarea takes the place of the scrolling content. */
+.fi-fo-rich-editor.asignua-rte-fullscreen .asignua-rte-source {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    height: auto !important;
+    resize: none;
+}
+
+.fi-fo-rich-editor.asignua-rte-source-active .fi-fo-rich-editor-tool:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.asignua-rte-source-notice {
+    flex: 0 0 auto;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--asignua-rte-notice-border, var(--warning-300, #fcd34d));
+    background-color: var(--asignua-rte-notice-bg, var(--warning-50, #fffbeb));
+    color: var(--asignua-rte-notice-color, var(--warning-800, #92400e));
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+}
+
+.dark .asignua-rte-source-notice {
+    border-bottom-color: var(--asignua-rte-notice-border-dark, rgb(251 191 36 / 0.3));
+    background-color: var(--asignua-rte-notice-bg-dark, rgb(251 191 36 / 0.1));
+    color: var(--asignua-rte-notice-color-dark, var(--warning-300, #fcd34d));
 }
 
 /* --- Counter ------------------------------------------------------------------------ */

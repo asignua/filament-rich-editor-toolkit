@@ -25,4 +25,7 @@ return [
     'text_length_max' => 'Pole :attribute nie może przekraczać :max znaków.',
     'text_length_min' => 'Pole :attribute musi zawierać co najmniej :min znaków.',
     'text_length_max_words' => 'Pole :attribute nie może przekraczać :max słów.',
+    'source_code' => 'Źródło',
+    'source_code_label' => 'Kod źródłowy HTML',
+    'source_code_unsupported' => 'Część znaczników nie jest obsługiwana przez ten edytor i została usunięta.',
 ];

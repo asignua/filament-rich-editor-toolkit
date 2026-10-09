@@ -9,6 +9,7 @@ use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
+use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Forms\Components\RichEditor;
@@ -46,9 +47,10 @@ class DemoForm extends Component implements HasActions, HasForms
                         ImageUrlPlugin::make(),
                         PasteCleanPlugin::make()->strict(),
                         FullscreenPlugin::make(),
+                        SourceCodePlugin::make(),
                     ])
                     ->textLength(max: 500, maxWords: 80) // @phpstan-ignore method.notFound (macro)
-                    ->toolbarButtons([['bold', 'link', 'h2', 'bulletList', 'table', 'cleanFormat', 'embed', 'imageUrl', 'fullscreen']]),
+                    ->toolbarButtons([['bold', 'link', 'h2', 'bulletList', 'table', 'cleanFormat', 'embed', 'imageUrl', 'sourceCode', 'fullscreen']]),
             ])
             ->statePath('data');
     }

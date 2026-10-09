@@ -25,4 +25,7 @@ return [
     'text_length_max' => 'Поле :attribute не повинно перевищувати :max символів.',
     'text_length_min' => 'Поле :attribute має містити щонайменше :min символів.',
     'text_length_max_words' => 'Поле :attribute не повинно перевищувати :max слів.',
+    'source_code' => 'Джерело',
+    'source_code_label' => 'HTML-код',
+    'source_code_unsupported' => 'Частина розмітки не підтримується цим редактором і була видалена.',
 ];

@@ -25,4 +25,7 @@ return [
     'text_length_max' => 'The :attribute must not be longer than :max characters.',
     'text_length_min' => 'The :attribute must be at least :min characters long.',
     'text_length_max_words' => 'The :attribute must not be longer than :max words.',
+    'source_code' => 'Source',
+    'source_code_label' => 'HTML source',
+    'source_code_unsupported' => 'Some markup is not supported by this editor and was removed.',
 ];

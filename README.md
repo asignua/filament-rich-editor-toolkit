@@ -9,7 +9,7 @@
 
 <img class="filament-hidden" src="https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.0.0/art/cover.jpg" alt="Filament Rich Editor Toolkit">
 
-Seven free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
+Eight free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
 reporting in Filament's GitHub Help:
 
 | Plugin | Fixes |
@@ -19,6 +19,7 @@ reporting in Filament's GitHub Help:
 | `EmbedPlugin` | `<iframe>` / video embeds are removed by the schema and the sanitizer. |
 | `ImageUrlPlugin` | No way to insert an image that lives on another site. |
 | `FullscreenPlugin` | No fullscreen mode for long content. |
+| `SourceCodePlugin` | No HTML source view ([#17718](https://github.com/filamentphp/filament/discussions/17718), [#19141](https://github.com/filamentphp/filament/discussions/19141)). |
 | `CharacterCountPlugin` + `RichTextLength` | No counter; limits that count HTML tags, or only characters, not the text the reader sees. |
 | `StickyToolbarPlugin` | The toolbar scrolls away on long content ([#17391](https://github.com/filamentphp/filament/discussions/17391), [#16919](https://github.com/filamentphp/filament/discussions/16919), [#11685](https://github.com/filamentphp/filament/discussions/11685)). |
 
@@ -74,6 +75,7 @@ use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
+use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
 use Filament\Forms\Components\RichEditor;
 
 RichEditor::make('body')
@@ -83,17 +85,18 @@ RichEditor::make('body')
         EmbedPlugin::make(),
         ImageUrlPlugin::make(),
         FullscreenPlugin::make(),
+        SourceCodePlugin::make(),
     ])
     ->textLength(max: 5000, maxWords: 800) // validation rule + counter
     ->toolbarButtons([
         ['bold', 'italic', 'link', 'cleanFormat'],
         ['h2', 'h3', 'bulletList', 'orderedList'],
-        ['embed', 'imageUrl', 'fullscreen'],
+        ['embed', 'imageUrl', 'sourceCode', 'fullscreen'],
     ]);
 ```
 
 A toolbar button is shown only when it is listed in `toolbarButtons()` (`cleanFormat`, `embed`, `imageUrl`,
-`fullscreen`); an unknown name makes Filament throw, so list only the plugins you installed.
+`sourceCode`, `fullscreen`); an unknown name makes Filament throw, so list only the plugins you installed.
 
 ### PasteCleanPlugin
 
@@ -227,6 +230,41 @@ the link, embed and image dialogs opened from the fullscreen toolbar still open 
 Esc is left to a modal that does not hold the editor, to an open toolbar dropdown and to any handler that already
 called `preventDefault()`.
 
+### SourceCodePlugin
+
+A `sourceCode` toolbar button that swaps the editing area for a plain `<textarea>` with the document's HTML, and back:
+
+```php
+RichEditor::make('body')
+    ->plugins([SourceCodePlugin::make()])           // ->indent(4) for four spaces
+    ->toolbarButtons([['bold', 'link', 'sourceCode']]);
+```
+
+The HTML is pretty-printed (one block per line, containers indented; `<pre>` is never re-indented; void elements such as
+`<br>` and `<img>` have no closing tag), monospace, always left-to-right, as tall as its content, or filling the screen
+together with `FullscreenPlugin`. The button is a toggle (`aria-pressed`) and the textarea has an `aria-label`.
+
+**The round trip goes through the editor's schema.** The edited HTML is handed to
+`editor.commands.setContent(html, { emitUpdate: true })`: TipTap parses it with a `DOMParser` into a detached document and
+then with the schema, so nothing is ever assigned to a live element, the field state is updated by Filament's own
+`update` handler, and the server sanitizer is unchanged. The price is that markup the schema does not know is dropped
+(`<mark>`, `<table>` without the table button's extension, an attribute nobody registered). The toolkit tells the editor
+so: after leaving source mode a non-blocking notice, "Some markup is not supported by this editor and was removed.",
+appears above the content when the result differs **materially** from what was typed. Not material (no notice):
+whitespace and indentation, attribute order, comments, `<b>` for `<strong>` (`<i>`, `<strike>`, `<del>` likewise),
+attributes the editor added (a link's `rel`/`target`), a bare `<div>`/`<span>`, loose top-level text wrapped in `<p>`, a
+lone `<p>` inside a list item, cell or quote, `<pre><code>` for `<pre>`. Anything else (a lost element, attribute,
+class, style, text, a different heading level or list type) shows it. The check errs on the side of a false notice.
+
+**Saving while still in source mode keeps the source.** The textarea is pushed into the editor 400 ms after the last
+keystroke, on blur/`change` (clicking Save blurs it first), in a capturing `submit` listener on the enclosing form, and
+when leaving. While in source mode every toolbar tool except `sourceCode` and `fullscreen` is disabled.
+
+`class`, `id`, `style` and the attributes you listed in `attributes` survive only if `CustomAttributesPlugin` is registered on
+the field; with it, source mode is how editors add them. **Tab is not trapped** in the textarea (a keyboard user could
+not leave it); type the indentation with spaces. Esc still leaves fullscreen. In a read-only editor the textarea is read-only.
+No server half: do not add the plugin to the front-end renderer. `source_code.indent` sets the default indent (0 to 8).
+
 ### CharacterCountPlugin and RichTextLength
 
 A counter under the editor and a validation rule that count the **plain text**, the same way:
@@ -316,7 +354,7 @@ to the renderer**: the cleanup happens once, at paste time.
 ## Configuration
 
 See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attributes`, `types`, `embed`, `paste_clean`
-(`keep_link_prefixes`, `strict`), `character_count` (`warn_at`), `fullscreen` (`z_index`), `sticky_toolbar`.
+(`keep_link_prefixes`, `strict`), `character_count` (`warn_at`), `fullscreen` (`z_index`), `source_code` (`indent`), `sticky_toolbar`.
 
 ## Gotchas
 
@@ -331,10 +369,13 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
 - **The sanitizer is the toolkit's own.** Allowances apply only to `RichEditorToolkit::renderer()` and
   `RichEditorToolkit::toHtml()`; a plain `RichContentRenderer::toHtml()` and every `->html()` column still drop
   `<iframe>` and the extra attributes.
-- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl`, `fullscreen` only when the matching plugin is registered.
+- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl`, `fullscreen`, `sourceCode` only when the matching plugin is registered.
 - **Fullscreen is a fixed overlay, not the top layer.** The top layer would paint above Filament's modals and hide the
   dialogs opened from the toolbar. The price: an ancestor with `transform`, `filter` or `contain` makes `position: fixed`
   fill that ancestor instead of the screen. `overflow` on a section, tab or repeater does not clip it.
+- **The source view is not a raw editor.** What you type is parsed through the schema, like a paste: unknown markup
+  disappears (with a notice), and the textarea is rebuilt from the editor on the next visit. Use `CustomAttributesPlugin`
+  for `class`/`id`/`style`/`data-*`.
 - **Counter and rule are separate.** The counter does not validate and the rule does not draw anything; `textLength()`
   adds both. A browser can be bypassed, so keep the rule.
 - **Strict paste is about pastes.** It does not unformat existing content and does not stop Ctrl+B; the `cleanFormat`

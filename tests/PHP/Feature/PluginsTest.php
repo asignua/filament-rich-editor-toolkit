@@ -15,6 +15,7 @@ use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
+use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
 use Asignua\RichEditorToolkit\Tests\TestCase;
 use DOMDocument;
 use DOMElement;
@@ -29,7 +30,7 @@ class PluginsTest extends TestCase
 {
     public function test_every_plugin_implements_the_filament_contract(): void
     {
-        foreach ([PasteCleanPlugin::class, CustomAttributesPlugin::class, EmbedPlugin::class, ImageUrlPlugin::class, FullscreenPlugin::class, CharacterCountPlugin::class] as $class) {
+        foreach ([PasteCleanPlugin::class, CustomAttributesPlugin::class, EmbedPlugin::class, ImageUrlPlugin::class, FullscreenPlugin::class, CharacterCountPlugin::class, SourceCodePlugin::class] as $class) {
             $this->assertInstanceOf(RichContentPlugin::class, $class::make());
         }
     }
@@ -206,10 +207,11 @@ class PluginsTest extends TestCase
 
         $this->assertStringContainsString('data-track', (string) json_encode($component->get('data')));
 
-        foreach (['custom-attributes.js', 'paste-clean.js', 'embed.js', 'fullscreen.js', 'character-count.js'] as $module) {
+        foreach (['custom-attributes.js', 'paste-clean.js', 'embed.js', 'fullscreen.js', 'character-count.js', 'source-code.js'] as $module) {
             $this->assertStringContainsString($module, $html);
         }
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.fullscreen'), $html);
+        $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.source_code'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.clear_formatting'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.embed'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.image_url'), $html);
@@ -309,6 +311,51 @@ class PluginsTest extends TestCase
         config()->set('rich-editor-toolkit.fullscreen.z_index', 44);
         $this->assertStringContainsString('z=44', FullscreenPlugin::make()->getTipTapJsExtensions()[0]);
         $this->assertNull(FullscreenPlugin::make()->zIndex(-1)->getZIndex());
+    }
+
+    public function test_the_source_code_plugin_is_a_toggle_tool_without_a_server_half(): void
+    {
+        $plugin = SourceCodePlugin::make();
+        $tool = $plugin->getEditorTools()[0];
+
+        $this->assertSame([], $plugin->getTipTapPhpExtensions());
+        $this->assertSame([], $plugin->getEditorActions());
+        $this->assertSame('sourceCode', $tool->getName());
+        $this->assertTrue($tool->isToggle());
+        $this->assertSame(__('rich-editor-toolkit::rich-editor-toolkit.source_code'), (string) $tool->getLabel());
+        $this->assertStringContainsString('asignuaToggleSourceCode', (string) $tool->getJsHandler());
+        $this->assertStringContainsString('storage.asignuaSourceCode', (string) $tool->getActiveJsExpression());
+        // The JS locks every tool but this one and fullscreen by matching these handler names.
+        $this->assertStringContainsString('asignuaToggleFullscreen', (string) FullscreenPlugin::make()->getEditorTools()[0]->getJsHandler());
+    }
+
+    public function test_the_source_code_module_gets_the_stylesheet_the_indent_and_translated_strings(): void
+    {
+        $url = SourceCodePlugin::make()->getTipTapJsExtensions()[0];
+
+        $this->assertStringContainsString('source-code.js', $url);
+        $this->assertStringContainsString('css=', $url);
+        $this->assertStringContainsString('indent=2', $url);
+        $this->assertStringContainsString('t-label='.rawurlencode(__('rich-editor-toolkit::rich-editor-toolkit.source_code_label')), $url);
+        $this->assertStringContainsString('t-notice='.rawurlencode(__('rich-editor-toolkit::rich-editor-toolkit.source_code_unsupported')), $url);
+
+        $this->assertStringContainsString('indent=4', SourceCodePlugin::make()->indent(4)->getTipTapJsExtensions()[0]);
+
+        config()->set('rich-editor-toolkit.source_code.indent', 3);
+        $this->assertSame(3, SourceCodePlugin::make()->getIndent());
+        $this->assertSame(5, SourceCodePlugin::make()->indent(5)->getIndent());
+        $this->assertSame(2, SourceCodePlugin::make()->indent(99)->getIndent());
+        $this->assertSame(0, SourceCodePlugin::make()->indent(0)->getIndent());
+    }
+
+    public function test_the_ui_stylesheet_covers_the_source_view_in_light_and_dark(): void
+    {
+        $css = (string) file_get_contents(dirname(__DIR__, 3).'/resources/dist/filament-rich-editor-toolkit-ui.css');
+
+        $this->assertStringContainsString('.asignua-rte-source {', $css);
+        $this->assertStringContainsString('.dark .asignua-rte-source {', $css);
+        $this->assertStringContainsString('.dark .asignua-rte-source-notice', $css);
+        $this->assertStringContainsString('.asignua-rte-fullscreen .asignua-rte-source', $css);
     }
 
     public function test_the_ui_stylesheet_ships_and_covers_fullscreen_and_the_counter(): void

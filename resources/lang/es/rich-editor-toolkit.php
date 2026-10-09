@@ -25,4 +25,7 @@ return [
     'text_length_max' => 'El campo :attribute no debe superar los :max caracteres.',
     'text_length_min' => 'El campo :attribute debe tener al menos :min caracteres.',
     'text_length_max_words' => 'El campo :attribute no debe superar las :max palabras.',
+    'source_code' => 'Código fuente',
+    'source_code_label' => 'Código fuente HTML',
+    'source_code_unsupported' => 'Parte del marcado no es compatible con este editor y se ha eliminado.',
 ];
