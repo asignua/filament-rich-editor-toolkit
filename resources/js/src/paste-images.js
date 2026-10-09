@@ -43,6 +43,7 @@
 //
 // IMPORTANT: `window` and `import.meta` are read ONLY inside the default-export factory.
 
+import { RECOVERED_ATTRIBUTE, newToken, recoveredTokens } from './paste-registry.js'
 import { paramsOf } from './ui-style.js'
 
 export const FILE_SCHEME = /^file:/i
@@ -228,8 +229,90 @@ export const extractRtfPictures = (rtf) => {
 // --- HTML ----------------------------------------------------------------
 
 /**
+ * Second-level public suffixes: a wildcard over one of them (`*.co.uk`) would allow-list every
+ * site of the country. Best effort, not the Public Suffix List. The same list is
+ * RemoteImageFetcher::PUBLIC_SUFFIXES; tests/fixtures/host-allow.json pins the two together.
+ */
+export const PUBLIC_SUFFIXES = [
+    'ac.jp',
+    'ac.uk',
+    'co.id',
+    'co.il',
+    'co.in',
+    'co.jp',
+    'co.kr',
+    'co.nz',
+    'co.th',
+    'co.uk',
+    'co.za',
+    'com.ar',
+    'com.au',
+    'com.br',
+    'com.cn',
+    'com.co',
+    'com.eg',
+    'com.es',
+    'com.hk',
+    'com.mx',
+    'com.my',
+    'com.pe',
+    'com.ph',
+    'com.pk',
+    'com.pl',
+    'com.ru',
+    'com.sa',
+    'com.sg',
+    'com.tr',
+    'com.tw',
+    'com.ua',
+    'com.ve',
+    'com.vn',
+    'edu.au',
+    'edu.cn',
+    'edu.ua',
+    'go.jp',
+    'gov.au',
+    'gov.br',
+    'gov.cn',
+    'gov.ua',
+    'gov.uk',
+    'in.ua',
+    'kiev.ua',
+    'ltd.uk',
+    'lviv.ua',
+    'me.uk',
+    'ne.jp',
+    'net.au',
+    'net.br',
+    'net.cn',
+    'net.in',
+    'net.nz',
+    'net.pl',
+    'net.ru',
+    'net.tr',
+    'net.ua',
+    'net.uk',
+    'or.jp',
+    'or.kr',
+    'org.au',
+    'org.br',
+    'org.cn',
+    'org.in',
+    'org.nz',
+    'org.pl',
+    'org.ru',
+    'org.tr',
+    'org.ua',
+    'org.uk',
+    'org.za',
+    'plc.uk',
+    'sch.uk',
+]
+
+/**
  * Whether `host` matches an allow-list entry: `*.example.com` = any subdomain (never the bare
- * domain, and the wildcard needs two more labels), otherwise an exact, case-insensitive name.
+ * domain; the wildcard needs two more labels, and they must not be a public suffix such as
+ * `co.uk`), otherwise an exact, case-insensitive name.
  * The server applies the same rule (RemoteImageFetcher::hostAllowed()); it is the one that decides,
  * this only avoids sending requests that cannot succeed.
  *
@@ -245,7 +328,12 @@ export const hostAllowed = (host, patterns) => {
         if (pattern.startsWith('*.')) {
             const suffix = pattern.slice(1)
 
-            return suffix.split('.').length > 2 && name.endsWith(suffix) && name.length > suffix.length
+            return (
+                suffix.split('.').length > 2 &&
+                !PUBLIC_SUFFIXES.includes(suffix.slice(1)) &&
+                name.endsWith(suffix) &&
+                name.length > suffix.length
+            )
         }
 
         return pattern !== '' && name === pattern
@@ -369,6 +457,7 @@ export const fitsLimits = (dataUrl, limits) => {
  *   parseHtml: (html: string) => Document,
  *   fetchRemote?: (url: string) => Promise<string>,
  *   limits?: {acceptedTypes?: string[]|null, maxSize?: number|string|null},
+ *   token?: string,
  * }} options
  * @returns {Promise<{html: string, converted: number, failed: number}|null>} null: nothing to do
  */
@@ -388,6 +477,13 @@ export const recoverImages = async (html, options) => {
     const settle = (element, dataUrl) => {
         if (typeof dataUrl === 'string' && fitsLimits(dataUrl, limits)) {
             element.setAttribute('src', dataUrl)
+
+            // See paste-registry.js: lets the picture survive paste-clean.js once Filament has
+            // replaced `src` with the temporary upload URL.
+            if (options.token) {
+                element.setAttribute(RECOVERED_ATTRIBUTE, options.token)
+            }
+
             converted++
         } else {
             element.remove()
@@ -429,18 +525,42 @@ export const recoverImages = async (html, options) => {
 // --- the paste handler -----------------------------------------------------
 
 /**
- * The stand-in for `event.clipboardData` of the re-dispatched paste: what ProseMirror and
- * Filament read from it (`getData`, `types`, `files`, `items`), and nothing else.
+ * The name a real `DataTransfer.getData()` resolves a type to: it lower-cases the argument and
+ * maps the legacy `text` to `text/plain` and `url` to `text/uri-list`. Filament's `localFiles`
+ * asks for `getData('text')`.
  */
-export const makeClipboard = (data, files) => ({
-    types: Object.keys(data),
-    files,
-    items: [],
-    getData: (type) => data[type] ?? '',
-    setData: () => {},
-})
+export const normalizeType = (type) => {
+    const name = String(type).toLowerCase()
+
+    return name === 'text' ? 'text/plain' : name === 'url' ? 'text/uri-list' : name
+}
+
+/**
+ * The stand-in for `event.clipboardData` of the re-dispatched paste: what ProseMirror and
+ * Filament read from it (`getData`, `types`, `files`, `items`), and nothing else. `getData`
+ * resolves the legacy names like the real thing ({@link normalizeType}); without it
+ * `getData('text')` is '' and Filament's `localFiles` takes the paste for a bare file paste.
+ */
+export const makeClipboard = (data, files) => {
+    const store = {}
+
+    for (const [type, value] of Object.entries(data)) {
+        store[normalizeType(type)] = value
+    }
+
+    return {
+        types: Object.keys(store),
+        files,
+        items: [],
+        getData: (type) => store[normalizeType(type)] ?? '',
+        setData: () => {},
+    }
+}
 
 export const REDISPATCHED = Symbol('asignuaPasteImages')
+
+// How long a recovery token stays valid at most (see paste-registry.js).
+const TOKEN_LIFETIME = 90000
 
 /**
  * @param {{
@@ -516,10 +636,28 @@ export const createPasteHandler = (config) => (view, event) => {
         return result.dataUrl
     }
 
+    // The form is captured NOW: when the editor is destroyed during the fetch (a tab switch, a
+    // Livewire re-render) `view.dom` is detached and `closest('form')` would find nothing, and the
+    // form would stay "processing" for ever.
+    const form = view.dom.closest('form')
+    const token = newToken()
+
     announce({ name: 'rich-editor-uploading-file' })
-    view.dom.closest('form')?.dispatchEvent(
+    form?.dispatchEvent(
         new win.CustomEvent('form-processing-started', { composed: true, cancelable: true, detail: { message: options.uploadingMessage } }),
     )
+
+    const finish = () => {
+        // Each step on its own: a Livewire component that is already gone makes `announce` throw,
+        // and the form must be released regardless.
+        try {
+            announce({ name: 'rich-editor-uploaded-file' })
+        } catch (error) {
+            console.error('[rich-editor-toolkit] could not announce the end of the paste upload:', error)
+        }
+
+        form?.dispatchEvent(new win.CustomEvent('form-processing-finished', { composed: true, cancelable: true, detail: {} }))
+    }
 
     ;(async () => {
         let outcome = null
@@ -530,32 +668,60 @@ export const createPasteHandler = (config) => (view, event) => {
                 hosts: config.hosts,
                 parseHtml,
                 fetchRemote,
+                token,
                 limits: { acceptedTypes: options.acceptedTypes, maxSize: options.maxSize },
             })
         } catch (error) {
             console.error('[rich-editor-toolkit] pasted images could not be processed:', error)
         }
 
+        // Whatever happens next, the spinner and the hold on the form end here and now, BEFORE the
+        // paste is re-dispatched: Filament's handler starts its own right away, and its "uploading"
+        // flag is a boolean, not a counter.
+        try {
+            if (view.isDestroyed) {
+                return
+            }
+
+            // The user kept typing: leave the cursor where they put it. Otherwise the paste lands
+            // where it was made.
+            if (view.state.doc === doc) {
+                view.dispatch(view.state.tr.setSelection(selection))
+            }
+        } catch (error) {
+            console.error('[rich-editor-toolkit] could not restore the cursor of a pasted picture:', error)
+        } finally {
+            finish()
+        }
+
         if (view.isDestroyed) {
             return
         }
 
-        // The user kept typing: leave the cursor where they put it. Otherwise the paste lands where
-        // it was made.
-        if (view.state.doc === doc) {
-            view.dispatch(view.state.tr.setSelection(selection))
-        }
+        // The recovered pictures keep their stamp through Filament's upload; the token is valid
+        // until Filament says it is done (or a minute and a half passed: the paste may have had
+        // nothing left to upload, in which case that event never comes).
+        const tokens = recoveredTokens()
 
-        // Our spinner and our hold on the form end BEFORE the paste is re-dispatched: Filament's
-        // handler starts its own right away, and its "uploading" flag is a boolean, not a counter.
-        announce({ name: 'rich-editor-uploaded-file' })
-        view.dom.closest('form')?.dispatchEvent(new win.CustomEvent('form-processing-finished', { composed: true, cancelable: true, detail: {} }))
+        if (outcome !== null && outcome.converted > 0) {
+            const forget = () => tokens.delete(token)
+
+            tokens.add(token)
+            view.dom.addEventListener('rich-editor-uploaded-file', forget, { once: true })
+            const expiry = setTimeout(forget, TOKEN_LIFETIME)
+
+            // Under Node (the tests) the timer must not keep the process alive.
+            expiry?.unref?.()
+        }
 
         const rewritten = new win.Event('paste', { bubbles: true, cancelable: true })
 
         rewritten[REDISPATCHED] = true
+        // `files: []`: this handler already decided that the HTML wins (it only runs when there is
+        // text, or no files). Word for Mac also puts a PNG of the selection on the clipboard; handed
+        // on, it would make Filament upload that picture too.
         Object.defineProperty(rewritten, 'clipboardData', {
-            value: makeClipboard({ ...snapshot, 'text/html': outcome === null ? html : outcome.html }, files),
+            value: makeClipboard({ ...snapshot, 'text/html': outcome === null ? html : outcome.html }, []),
         })
 
         // Filament's handler (or, with nothing left to upload, the plain paste) takes it from here.

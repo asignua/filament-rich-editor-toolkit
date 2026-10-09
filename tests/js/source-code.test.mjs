@@ -444,3 +444,254 @@ test('destroy while in source mode removes everything it added', () => {
     assert.ok(!root.classList.contains(ACTIVE_CLASS))
     assert.equal(doc.getElementById('bold').disabled, false)
 })
+
+// --- the document changes under the textarea ---------------------------------------------------------
+
+/** What the server does: it puts a new state into the editor (setContent without emitUpdate). */
+const changeFromOutside = (editor, html) => {
+    editor.html = roundTrip(html)
+}
+
+test('a change that comes from outside rebuilds the textarea, so the stale text cannot be pushed back', async () => {
+    const { editor, view, doc, window } = setup('<p>id old</p>')
+
+    view.enter()
+
+    const textarea = doc.querySelector('textarea')
+
+    // The server rewrote the document (e.g. saveFileAttachments swapped an attachment id).
+    changeFromOutside(editor, '<p>id new</p>')
+    assert.equal(view.refresh(), true)
+    assert.equal(textarea.value, '<p>id new</p>')
+
+    // The next keystroke or blur must not resurrect the old text.
+    textarea.dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }))
+    textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    assert.equal(editor.calls.length, 0, 'nothing was pushed: the textarea equals the editor')
+    assert.equal(editor.getHTML(), '<p>id new</p>')
+})
+
+test('typing after such a change builds on the NEW document', async () => {
+    const { editor, view, doc, window } = setup('<p>id old</p>')
+
+    view.enter()
+    changeFromOutside(editor, '<p>id new</p>')
+    view.refresh()
+
+    const textarea = doc.querySelector('textarea')
+
+    textarea.value = '<p>id new, edited</p>'
+    textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    assert.equal(editor.getHTML(), '<p>id new, edited</p>')
+})
+
+test('the stale-id scenario without refresh is the bug: a flush overwrites the new document', () => {
+    // Documents what refresh() prevents: the textarea still holds the old text and the user types.
+    const { editor, view, doc } = setup('<p>id old</p>')
+
+    view.enter()
+    const textarea = doc.querySelector('textarea')
+
+    textarea.value = '<p>id old!</p>'
+    changeFromOutside(editor, '<p>id new</p>')
+    view.exit()
+
+    assert.equal(editor.getHTML(), '<p>id old!</p>')
+})
+
+test('a pending (unflushed) edit is dropped by a change from outside: the editor wins', async () => {
+    const { editor, view, doc, window } = setup('<p>a</p>')
+
+    view.enter()
+
+    const textarea = doc.querySelector('textarea')
+
+    textarea.value = '<p>typed a moment ago</p>'
+    textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+    changeFromOutside(editor, '<p>from the server</p>')
+    view.refresh()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    assert.equal(textarea.value, '<p>from the server</p>')
+    assert.equal(editor.getHTML(), '<p>from the server</p>')
+    assert.equal(editor.calls.length, 0, 'the debounced push was cancelled')
+})
+
+test('refresh does nothing when the editor already shows the textarea, or when the source is not open', () => {
+    const { view, doc } = setup('<p>a</p>')
+
+    assert.equal(view.refresh(), false, 'not active')
+    view.enter()
+    assert.equal(view.refresh(), false, 'same text')
+
+    const textarea = doc.querySelector('textarea')
+
+    textarea.setSelectionRange(2, 2)
+    view.refresh()
+    assert.equal(textarea.selectionStart, 2, 'the caret is not disturbed')
+})
+
+test('refresh keeps the caret near where it was: counted from the end when it was nearer to it', () => {
+    const { editor, view, doc } = setup('<p>0123456789</p>')
+
+    view.enter()
+
+    const textarea = doc.querySelector('textarea')
+
+    textarea.focus()
+    textarea.setSelectionRange(textarea.value.length - 3, textarea.value.length - 3)
+    changeFromOutside(editor, '<p>0123456789 and a much longer tail now</p>')
+    view.refresh()
+
+    assert.equal(textarea.value.length - textarea.selectionStart, 3)
+})
+
+test('our own sync is not a change from outside', () => {
+    const { editor, view, doc } = setup('<p>a</p>')
+
+    view.enter()
+
+    const textarea = doc.querySelector('textarea')
+    let refreshed = null
+
+    // The real editor emits `update` / a transaction INSIDE setContent: refresh() must see syncing.
+    const setContent = editor.commands.setContent
+
+    editor.commands.setContent = (...args) => {
+        const result = setContent(...args)
+
+        refreshed = view.refresh()
+
+        return result
+    }
+
+    textarea.value = '<p>typed</p>'
+    textarea.dispatchEvent(new doc.defaultView.FocusEvent('focusout', { bubbles: true }))
+
+    assert.equal(refreshed, false)
+    assert.equal(textarea.value, '<p>typed</p>')
+})
+
+// --- keyboard save ------------------------------------------------------------------------------------
+
+const keydown = (window, init) => new window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+
+test('Ctrl/Cmd+S in the textarea flushes at once (it fires neither focusout nor submit)', () => {
+    const { editor, view, doc, window } = setup()
+
+    view.enter()
+
+    const textarea = doc.querySelector('textarea')
+
+    textarea.value = '<p>unsaved</p>'
+    textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+    assert.equal(editor.calls.length, 0)
+
+    textarea.dispatchEvent(keydown(window, { key: 's', ctrlKey: true }))
+    assert.equal(editor.getHTML(), '<p>unsaved</p>', 'synchronously, before the shortcut handler reads the state')
+
+    textarea.value = '<p>more</p>'
+    textarea.dispatchEvent(keydown(window, { key: 's', metaKey: true }))
+    assert.equal(editor.getHTML(), '<p>more</p>')
+})
+
+test('any chord with a modifier flushes; a plain key and a bare modifier press do not', () => {
+    const { editor, view, doc, window } = setup()
+
+    view.enter()
+
+    const textarea = doc.querySelector('textarea')
+
+    textarea.value = '<p>one</p>'
+    textarea.dispatchEvent(keydown(window, { key: 'a' }))
+    textarea.dispatchEvent(keydown(window, { key: 'Control', ctrlKey: true }))
+    textarea.dispatchEvent(keydown(window, { key: 'Meta', metaKey: true }))
+    assert.equal(editor.calls.length, 0)
+
+    textarea.dispatchEvent(keydown(window, { key: 'Enter', ctrlKey: true }))
+    assert.equal(editor.calls.length, 1)
+})
+
+test('the Livewire commit hook flushes too, and is removed on leaving', () => {
+    const hooks = []
+    const removed = []
+    const { editor, view, doc } = setup('<p>a</p>', {
+        onCommit: (callback) => {
+            hooks.push(callback)
+
+            return () => removed.push(callback)
+        },
+    })
+
+    view.enter()
+    assert.equal(hooks.length, 1)
+
+    doc.querySelector('textarea').value = '<p>before the request</p>'
+    hooks[0]()
+    assert.equal(editor.getHTML(), '<p>before the request</p>')
+
+    view.exit()
+    assert.deepEqual(removed, hooks)
+})
+
+test('destroying while in source mode also removes the Livewire hook', () => {
+    const removed = []
+    const { view } = setup('<p>a</p>', { onCommit: () => () => removed.push(1) })
+
+    view.enter()
+    view.destroy()
+
+    assert.deepEqual(removed, [1])
+})
+
+// --- the extension wiring ---------------------------------------------------------------------------------
+
+import factory from '../../resources/js/src/source-code.js'
+
+test('the extension refreshes the open source view on a document transaction, not on a selection one', () => {
+    const win = page()
+    const editor = fakeEditor('<p>old</p>')
+    const root = win.document.getElementById('root')
+
+    editor.view = { dom: win.document.querySelector('.ProseMirror') }
+    globalThis.window = { FilamentRichEditor: { tiptap: { core: { Extension: { create: (config) => config } } } }, DOMParser: dom.window.DOMParser }
+    globalThis.document = win.document
+
+    try {
+        const extension = factory()
+        const context = { editor, storage: {} }
+
+        // onCreate builds the controller from the real root.
+        extension.onCreate.call(context)
+        assert.ok(root)
+
+        // Reach the controller through the toggle command.
+        const toggle = extension.addCommands.call({ storage: context.storage }).asignuaToggleSourceCode
+        const tr = { setMeta: () => tr }
+
+        editor.state = { tr }
+        editor.view.dispatch = () => {}
+        toggle()({ tr, dispatch: () => {}, editor })
+
+        const textarea = win.document.querySelector('textarea.asignua-rte-source')
+
+        assert.ok(textarea)
+
+        // The server's setContent emits NO update, only a transaction.
+        editor.html = roundTrip('<p>from the server</p>')
+        extension.onTransaction.call(context, { transaction: { docChanged: false } })
+        assert.equal(textarea.value, '<p>old</p>', 'a selection-only transaction changes nothing')
+
+        extension.onTransaction.call(context, { transaction: { docChanged: true } })
+        assert.equal(textarea.value, '<p>from the server</p>')
+
+        extension.onDestroy.call(context)
+    } finally {
+        delete globalThis.window
+        delete globalThis.document
+    }
+})

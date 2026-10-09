@@ -4,6 +4,9 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { JSDOM } from 'jsdom'
 
 import factory, {
@@ -13,12 +16,16 @@ import factory, {
     findImages,
     fitsLimits,
     hexToBytes,
+    PUBLIC_SUFFIXES,
     hostAllowed,
+    makeClipboard,
+    normalizeType,
     matchPictures,
     mimeOf,
     recoverImages,
     settingsFromParams,
 } from '../../resources/js/src/paste-images.js'
+import { RECOVERED_ATTRIBUTE, recoveredTokens } from '../../resources/js/src/paste-registry.js'
 
 const dom = new JSDOM('<!doctype html><form><div id="editor"></div></form>')
 const window = dom.window
@@ -570,6 +577,189 @@ test('handler: if the user has typed meanwhile, the cursor is not forced back', 
     await settled(() => context.received.length === 1)
 
     assert.deepEqual(context.dispatched, [])
+})
+
+// --- public suffixes: the PHP twin reads the same fixture ---------------------------------------------
+
+const hostFixture = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../fixtures/host-allow.json'), 'utf8'))
+
+test('hostAllowed: the list of public suffixes is the one the server uses', () => {
+    assert.deepEqual(PUBLIC_SUFFIXES, hostFixture.suffixes)
+})
+
+for (const { host, patterns, allowed } of hostFixture.cases) {
+    test(`shared host fixture: ${host} against ${patterns.join(',')} -> ${allowed}`, () => {
+        assert.equal(hostAllowed(host, patterns), allowed)
+    })
+}
+
+// --- the stand-in clipboard ----------------------------------------------------------------------------
+
+test('makeClipboard resolves the legacy type names like a real DataTransfer', () => {
+    const clipboard = makeClipboard({ 'text/plain': 'plain', 'text/html': '<p>x</p>', 'text/uri-list': 'https://a.test/' }, [])
+
+    assert.equal(clipboard.getData('text'), 'plain')
+    assert.equal(clipboard.getData('Text'), 'plain')
+    assert.equal(clipboard.getData('TEXT/PLAIN'), 'plain')
+    assert.equal(clipboard.getData('url'), 'https://a.test/')
+    assert.equal(clipboard.getData('URL'), 'https://a.test/')
+    assert.equal(clipboard.getData('text/html'), '<p>x</p>')
+    assert.equal(clipboard.getData('application/x-nothing'), '')
+    assert.deepEqual(clipboard.types, ['text/plain', 'text/html', 'text/uri-list'])
+    assert.equal(normalizeType('Text'), 'text/plain')
+})
+
+// A clipboard that behaves like the REAL one: only the canonical names answer, `text` and `url` are
+// aliases. (The `clipboardOf` of the tests above is more lenient on purpose; this one is not.)
+const realClipboardOf = (data, files = []) => ({
+    types: Object.keys(data),
+    files,
+    getData: (type) => {
+        const name = String(type).toLowerCase()
+
+        return data[name === 'text' ? 'text/plain' : name === 'url' ? 'text/uri-list' : name] ?? ''
+    },
+})
+
+const realPasteEvent = (data, files) => {
+    const event = new window.Event('paste', { bubbles: true, cancelable: true })
+
+    Object.defineProperty(event, 'clipboardData', { value: realClipboardOf(data, files) })
+
+    return event
+}
+
+test('handler: Filament reads getData(\'text\') of the re-dispatched paste and finds the text (parity with a real clipboard)', async () => {
+    const context = setup()
+
+    context.handler(context.view, realPasteEvent({ 'text/plain': 'Before After', 'text/html': word(1), 'text/rtf': rtfDocument(wordPicture(PNG_HEX)) }))
+    await settled(() => context.received.length === 1)
+
+    const clipboard = context.received[0].clipboardData
+
+    // extension-local-files.js: `const hasText = event.clipboardData?.getData('text')?.length > 0`
+    assert.equal(clipboard.getData('text'), 'Before After')
+    assert.ok(clipboard.getData('text').length > 0)
+})
+
+test('handler: files that came with the text are NOT passed on (the HTML won)', async () => {
+    const context = setup()
+    const screenshot = { name: 'image.png', type: 'image/png', size: 10 }
+
+    // Word for Mac: html + text + a PNG of the selection.
+    assert.equal(
+        context.handler(context.view, realPasteEvent({ 'text/plain': 'Before After', 'text/html': word(1), 'text/rtf': rtfDocument(wordPicture(PNG_HEX)) }, [screenshot])),
+        true,
+    )
+    await settled(() => context.received.length === 1)
+
+    const clipboard = context.received[0].clipboardData
+
+    assert.deepEqual(Array.from(clipboard.files), [], 'otherwise Filament would also upload the PNG of the text')
+    assert.ok(clipboard.getData('text/html').includes('data:image/png'))
+})
+
+// --- recovered pictures carry the one-time token ---------------------------------------------------------
+
+test('recoverImages: a recovered picture is stamped with the token, a removed one is gone', async () => {
+    const outcome = await recoverImages(word(2), {
+        rtf: rtfDocument(wordPicture(PNG_HEX), `{\\pict\\emfblip\r\n${EMF_HEX}}`),
+        parseHtml,
+        token: 'tok-x',
+        limits: {},
+    })
+    const doc = parseHtml(outcome.html)
+
+    assert.equal(doc.querySelectorAll(`img[${RECOVERED_ATTRIBUTE}="tok-x"]`).length, 1)
+    assert.equal(doc.querySelectorAll('img').length, 1)
+})
+
+test('handler: the token is valid while Filament uploads and is forgotten when it says it is done', async () => {
+    const context = setup()
+
+    context.handler(context.view, realPasteEvent({ 'text/plain': 'x', 'text/html': word(1), 'text/rtf': rtfDocument(wordPicture(PNG_HEX)) }))
+    await settled(() => context.received.length === 1)
+
+    const html = context.received[0].clipboardData.getData('text/html')
+    const token = parseHtml(html).querySelector(`img[${RECOVERED_ATTRIBUTE}]`).getAttribute(RECOVERED_ATTRIBUTE)
+
+    assert.ok(recoveredTokens().has(token))
+
+    context.element.dispatchEvent(new window.CustomEvent('rich-editor-uploaded-file', { bubbles: true, detail: {} }))
+
+    assert.ok(!recoveredTokens().has(token))
+})
+
+test('handler: nothing converted, no token is left behind', async () => {
+    const before = recoveredTokens().size
+    const context = setup()
+
+    context.handler(context.view, realPasteEvent({ 'text/plain': 'x', 'text/html': word(2), 'text/rtf': rtfDocument(wordPicture(PNG_HEX)) }))
+    await settled(() => context.received.length === 1)
+
+    assert.equal(recoveredTokens().size, before)
+})
+
+// --- the form is always released ----------------------------------------------------------------------
+
+test('handler: an editor destroyed during the fetch still ends the spinner and releases the form', async () => {
+    let release
+    const context = setup({ mount: () => new Promise((resolve) => (release = resolve)) })
+
+    context.handler(context.view, pasteEvent({ 'text/plain': 'x', 'text/html': '<img src="https://lh7.googleusercontent.com/a">' }))
+    assert.deepEqual(context.formEvents, ['started'])
+
+    // The editor goes away (and takes the DOM with it) before the server answers.
+    context.view.isDestroyed = true
+    context.element.remove()
+    release({ error: 'gone' })
+    await settled(() => context.formEvents.length === 2)
+
+    assert.deepEqual(context.formEvents, ['started', 'finished'])
+    assert.ok(context.events.some(([name]) => name === 'rich-editor-uploaded-file'))
+    assert.equal(context.received.length, 0, 'but no paste is re-dispatched into a dead editor')
+})
+
+test('handler: a Livewire component that is already gone cannot keep the form locked', async () => {
+    const context = setup({ mount: async () => ({ error: 'x' }) })
+    const formEvents = context.formEvents
+    const original = console.error
+
+    console.error = () => {}
+
+    try {
+        context.handler(context.view, pasteEvent({ 'text/plain': 'x', 'text/html': '<img src="https://lh7.googleusercontent.com/a">' }))
+        context.view.isDestroyed = true
+        // From now on asking for the wire throws, as it does once the component is removed.
+        context.view.dom.dispatchEvent = () => {
+            throw new Error('component gone')
+        }
+        await settled(() => formEvents.length === 2)
+    } finally {
+        console.error = original
+    }
+
+    assert.deepEqual(formEvents, ['started', 'finished'])
+})
+
+test('handler: an exception while restoring the cursor still releases the form', async () => {
+    const context = setup()
+    const original = console.error
+
+    console.error = () => {}
+
+    try {
+        context.view.dispatch = () => {
+            throw new Error('boom')
+        }
+        context.handler(context.view, pasteEvent({ 'text/plain': 'x', 'text/html': word(1), 'text/rtf': rtfDocument(wordPicture(PNG_HEX)) }))
+        await settled(() => context.formEvents.length === 2)
+    } finally {
+        console.error = original
+    }
+
+    assert.deepEqual(context.formEvents, ['started', 'finished'])
+    await settled(() => context.received.length === 1)
 })
 
 // --- the module itself ----------------------------------------------------------------------------

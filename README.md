@@ -169,22 +169,41 @@ is where you put it; otherwise the paste lands where it was made.
 1. https only, port 443, no credentials, no whitespace/control characters/backslashes; a plain DNS name (no IP literal,
    `localhost`, or numeric forms such as `2130706433`).
 2. The host must match `paste_clean.remote_image_hosts` (default `['*.googleusercontent.com']`; `*.x.y` = any subdomain, never the
-   bare domain; otherwise an exact name). An empty list turns Google Docs off and leaves Word.
+   bare domain; otherwise an exact name). A wildcard needs two labels after `*.` that are **not a public suffix**: `*.com`,
+   `*.co.uk` and `*.com.ua` match nothing (a best-effort list of common second-level suffixes, not the full Public Suffix
+   List; the browser applies the same rule). An empty list turns Google Docs off and leaves Word.
 3. The name is resolved by the server and **every** address must be public: loopback, private, link-local (cloud metadata),
-   CGNAT, documentation, multicast and the IPv4-wrapping IPv6 ranges (mapped, NAT64, 6to4, Teredo) are refused. A name that
+   CGNAT, documentation, multicast and the IPv4-wrapping IPv6 ranges (mapped, translated `::ffff:0:a.b.c.d`, NAT64, 6to4,
+   Teredo) plus `3fff::/20` and `5f00::/16` are refused. A name that
    resolves to a public *and* a private address is refused (the shape of a DNS-rebinding setup).
 4. The connection is **pinned** to the address that was checked (`CURLOPT_RESOLVE`), so a second lookup cannot return something else.
+   The request is made **without a proxy**, whatever `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` say: the pin fixes where the
+   client connects, and with a proxy that is the proxy, which would then resolve the name itself and could reach an internal
+   address. A server that can only reach the internet through an egress proxy therefore cannot download Google Docs
+   pictures (Word's keep working); allow direct https egress for this feature instead.
 5. No redirects (a 3xx is a failure).
-6. Timeouts, and a byte cap enforced while downloading (`paste_clean.remote_image_max_kb`, 5120 by default; the field's own
-   `fileAttachmentsMaxSize()` wins when smaller).
+6. Timeouts, and a byte cap on the bytes that **come off the wire** (`paste_clean.remote_image_max_kb`, 5120 by default; the
+   field's own `fileAttachmentsMaxSize()` wins when smaller): `Content-Length`, and a capped sink that fails the write
+   crossing the cap, which makes the transfer abort. The response is **never decompressed** (`Accept-Encoding: identity`,
+   `decode_content` off) and a `Content-Encoding: gzip` answer is refused, so a few kilobytes of gzip cannot inflate into
+   gigabytes.
 7. The type is decided by the file's **magic bytes** (png, jpeg, gif, webp). The remote `Content-Type` is ignored; SVG and HTML are refused.
 
 **Who may call it.** The download is an editor *action* (`asignuaFetchRemoteImage`) that the browser mounts without a modal:
 the same Livewire request as every toolbar action. That gives it the page's session, CSRF protection and authorisation for
 free, and it answers only with a `data:` URL or a short error code, never an exception message. On top of that it refuses
-fields that are disabled or take no attachments, and it is rate limited per user (per IP for guests):
-`paste_clean.remote_image_rate_limit` (60 per minute). It works outside panels too, but note that on a public form it is open to
-anyone who can reach that form, within the limits above. Why a `data:` URL and not a direct upload: Filament's pasted-image
+fields that are disabled or take no attachments.
+
+- **Authorisation.** By default it needs a **logged-in user** (`auth()->check()`); anonymous visitors get
+  `['error' => 'unauthorized']`. Allow guests with `paste_clean.remote_image_guests => true`, or decide per field:
+  `PasteCleanPlugin::make()->uploadImages()->authorizeRemoteImages(fn (RichEditor $component): bool => auth()->user()?->can('create', Post::class) ?? false)`
+  (also accepts a plain `true` / `false`). Without it, a public form with an editor would let anyone make your server fetch URLs.
+- **Rate limits.** Two buckets, both must have room: per viewer in total (`paste_clean.remote_image_rate_limit`, 60 a minute) and
+  per viewer **and field** (`remote_image_rate_limit_per_field`, 30). The viewer is the user id, or the IP for a guest. Behind a
+  reverse proxy or CDN the IP is the visitor's only when Laravel's `TrustProxies` is configured: without it every guest shares
+  the proxy's address (one bucket for all), and a list that trusts everybody lets a guest choose his own address.
+
+Why a `data:` URL and not a direct upload: Filament's pasted-image
 upload already does validation, storage and the attachment record, so reusing it keeps one code path and your
 `saveUploadedFileAttachmentUsing`; the cost is about a third more bytes on the wire for the (capped) picture.
 
@@ -410,8 +429,12 @@ lone `<p>` inside a list item, cell or quote, `<pre><code>` for `<pre>`. Anythin
 class, style, text, a different heading level or list type) shows it. The check errs on the side of a false notice.
 
 **Saving while still in source mode keeps the source.** The textarea is pushed into the editor 400 ms after the last
-keystroke, on blur/`change` (clicking Save blurs it first), in a capturing `submit` listener on the enclosing form, and
-when leaving. While in source mode every toolbar tool except `sourceCode` and `fullscreen` is disabled.
+keystroke, on blur/`change` (clicking Save blurs it first), synchronously on any Ctrl/Cmd keydown (Filament's save
+shortcut `mod+s` fires neither blur nor submit), just before Livewire sends a request (its `commit` hook, best effort), in a
+capturing `submit` listener on the enclosing form, and when leaving. If the document changes underneath the textarea (the
+server rewrites the attachment ids when the form is saved), the textarea is rebuilt from the editor, so the stale text can
+never overwrite it; text typed in the last 400 ms and not yet pushed is replaced then. While in source mode every toolbar tool
+except `sourceCode` and `fullscreen` is disabled.
 
 `class`, `id`, `style` and the attributes you listed in `attributes` survive only if `CustomAttributesPlugin` is registered on
 the field; with it, source mode is how editors add them. **Tab is not trapped** in the textarea (a keyboard user could
@@ -496,7 +519,8 @@ $renderer = RichContentRenderer::make($post->body)
 {!! RichEditorToolkit::toHtml($renderer) !!}
 ```
 
-This adds `CustomAttributesPlugin`, `EmbedPlugin`, `ImagePropertiesPlugin` and `LinkOptionsPlugin` and sanitizes with the toolkit's **own** sanitizer: a copy of
+This adds `CustomAttributesPlugin`, `EmbedPlugin`, `ImagePropertiesPlugin` and `LinkOptionsPlugin` (the last two can be turned off, see
+[Upgrading from 1.0](#upgrading-from-10)) and sanitizes with the toolkit's **own** sanitizer: a copy of
 Filament's config plus your attribute allow-list and, when `EmbedPlugin` is attached, `<iframe>` whose `src` passes the
 embed allow-list. Filament's shared sanitizer is never changed, so `TextColumn::html()`, `TextEntry::html()`,
 notifications and the Markdown editor keep Filament's defaults. A renderer's own `toHtml()` uses that shared sanitizer,
@@ -507,7 +531,36 @@ to the renderer**: the cleanup happens once, at paste time.
 ## Configuration
 
 See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attributes`, `types`, `embed`, `paste_clean`
-(`keep_link_prefixes`, `strict`, `upload_images`, `remote_image_hosts`, `remote_image_max_kb`, `remote_image_rate_limit`), `link_options` (`rel_tokens`, `external_rel`, `internal_hosts`), `character_count` (`warn_at`), `fullscreen` (`z_index`), `source_code` (`indent`), `sticky_toolbar`.
+(`keep_link_prefixes`, `strict`, `upload_images`, `remote_image_hosts`, `remote_image_max_kb`, `remote_image_rate_limit`, `remote_image_rate_limit_per_field`, `remote_image_guests`), `renderer` (`link_options`, `image_properties`), `link_options` (`rel_tokens`, `external_rel`, `internal_hosts`), `character_count` (`warn_at`), `fullscreen` (`z_index`), `source_code` (`indent`), `sticky_toolbar`.
+
+## Upgrading from 1.0
+
+`RichEditorToolkit::plugins()` / `renderer()` now also attach `LinkOptionsPlugin` and `ImagePropertiesPlugin`, so **existing pages
+render differently** after the upgrade, without any change to your code:
+
+| What | Before | Now |
+| --- | --- | --- |
+| `<a target rel>` | stored values passed through | `target` is `_blank` or dropped; `rel` is filtered to `link_options.rel_tokens` (HTML link types, never `opener`); `_blank` forces `noopener noreferrer` |
+| old `<figure><img><figcaption>` | `<figure>` markup | read as an image with a caption and written as `<span class="asignua-rte-figure"><img><span class="asignua-rte-caption">`; markup inside the figcaption is flattened to text |
+| `<img alt="">` | the empty `alt` was dropped | kept (a decorative image) |
+
+They stay **on by default**: the editor-side plugins cannot work without them (a caption or an alignment that is saved but not
+rendered would silently vanish from the page), so turning them off by default would trade a visible change for a silent loss.
+To keep the 1.0 output byte for byte, opt out, per call or globally:
+
+```php
+RichEditorToolkit::renderer($post->body, links: false, images: false)->toHtml();
+RichEditorToolkit::plugins(links: false, images: false);   // for a renderer you build yourself
+```
+
+```php
+// config/rich-editor-toolkit.php
+'renderer' => ['link_options' => false, 'image_properties' => false],
+```
+
+Further changes to be aware of: the Google Docs picture download now requires a **logged-in user** by default
+(`paste_clean.remote_image_guests`, `PasteCleanPlugin::authorizeRemoteImages()`), runs **without a proxy**, and never decompresses;
+a wildcard host over a public suffix (`*.co.uk`) no longer matches. Run `php artisan filament:assets` (new modules).
 
 ## Gotchas
 
@@ -531,7 +584,8 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
   for `class`/`id`/`style`/`data-*`.
 - **Image properties live on the image.** The caption and the alignment are node attributes: the wrapper `<span>` is
   built on output, and its own `class`/`style`/`data-*` are dropped when it is read back (the `<img>`'s are kept).
-  Pasting a captioned image inside the editor keeps the image but not the caption (set it again in the dialog).
+  Pasting a captioned image inside the editor keeps the caption and the alignment with it (Filament's paste handler splits the
+  wrapper; the toolkit joins it again). A caption pasted from OUTSIDE the editor (another page, Word) is dropped with the wrapper.
   The `imageProperties` button is disabled until an image is selected. `ImageUrlPlugin` images are fine.
   `left`/`right` are floats: clear them below a section that must start on its own line.
 - **Link options after the renderer change.** With `LinkOptionsPlugin` in the renderer (it is in `RichEditorToolkit::plugins()`), a stored

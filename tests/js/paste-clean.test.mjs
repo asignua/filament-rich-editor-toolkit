@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 import { JSDOM } from 'jsdom'
 
 import { cleanPastedHtml } from '../../resources/js/src/paste-clean.js'
+import { RECOVERED_ATTRIBUTE, recoveredTokens } from '../../resources/js/src/paste-registry.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const dom = new JSDOM('')
@@ -836,4 +837,118 @@ test('paste: the caption of a pasted captioned image does not become loose text'
     )
 
     assert.ok(!out.includes('Caption'))
+})
+
+// --- pictures that paste-images.js recovered and Filament has just uploaded ----------------------
+
+// What Filament leaves behind: `src` is the TEMPORARY upload URL (foreign to the page when it is a
+// presigned S3 URL, or when app.url differs from location.origin), `data-id` the file key, and the
+// stamp of paste-images.js, untouched.
+const uploaded = (token, src = 'https://bucket.s3.eu-west-1.amazonaws.com/livewire-tmp/abc.png?X-Amz-Signature=1') =>
+    `<p><img src="${src}" data-id="key1" ${RECOVERED_ATTRIBUTE}="${token}"></p>`
+
+test('a recovered, just uploaded picture survives even when its temporary URL is foreign', () => {
+    recoveredTokens().add('tok-1')
+
+    try {
+        const out = clean(uploaded('tok-1'))
+
+        assert.equal(countOf(out, 'img[data-id="key1"]'), 1)
+        assert.ok(out.includes('amazonaws.com'))
+        assert.ok(!out.includes(RECOVERED_ATTRIBUTE), 'the stamp itself does not stay in the content')
+    } finally {
+        recoveredTokens().delete('tok-1')
+    }
+})
+
+test('the same holds for another scheme or host of the SAME app (APP_URL behind a proxy)', () => {
+    recoveredTokens().add('tok-2')
+
+    try {
+        assert.equal(countOf(clean(uploaded('tok-2', 'http://internal.test/livewire/preview-file/x')), 'img'), 1)
+    } finally {
+        recoveredTokens().delete('tok-2')
+    }
+})
+
+test('a forged data-id on a foreign picture still removes it (no stamp)', () => {
+    assert.equal(countOf(clean('<p><img src="https://evil.test/x.png" data-id="forged"></p>'), 'img'), 0)
+})
+
+test('a forged stamp does not help: the token has to be one that is registered right now', () => {
+    assert.equal(countOf(clean(uploaded('guessed')), 'img'), 0)
+
+    recoveredTokens().add('tok-3')
+    recoveredTokens().delete('tok-3')
+    assert.equal(countOf(clean(uploaded('tok-3')), 'img'), 0, 'a token is forgotten when the paste is over')
+})
+
+test('a registered token without a data-id (the upload failed) keeps nothing', () => {
+    recoveredTokens().add('tok-4')
+
+    try {
+        assert.equal(countOf(clean(`<p><img src="https://evil.test/x.png" ${RECOVERED_ATTRIBUTE}="tok-4"></p>`), 'img'), 0)
+    } finally {
+        recoveredTokens().delete('tok-4')
+    }
+})
+
+// --- a captioned image pasted INSIDE the editor ----------------------------------------------------
+
+// Filament's localFiles moves the <img> of every paste into a <p> of its own and serialises, and
+// re-parsing that closes the wrapper: this is the string the hook really receives (derived with a
+// spec-compliant parser, see the comment on restoreSplitCaptions).
+const SPLIT =
+    '<p data-pm-slice="1 1 []">Hello <span class="asignua-rte-figure asignua-rte-align-center"></span></p>' +
+    '<p><img src="/ee-media/1" data-id="k1" alt="A"></p>' +
+    '<span class="asignua-rte-caption">Cap text</span> tail<p></p>'
+
+test('in-editor paste: a split captioned image gets its caption and alignment back as attributes', () => {
+    const out = clean(SPLIT)
+    const image = parseHtml(out).body.querySelector('img')
+
+    assert.equal(image.getAttribute('data-asignua-caption'), 'Cap text')
+    assert.equal(image.getAttribute('data-asignua-align'), 'center')
+    assert.equal(image.getAttribute('data-id'), 'k1')
+    assert.equal(countOf(out, '.asignua-rte-caption, .asignua-rte-figure'), 0, 'no orphan caption is left as loose text')
+    assert.ok(!textOf(out).includes('Cap text'))
+    assert.ok(out.includes('data-pm-slice="1 1 []"'), 'the slice marker stays')
+    assert.ok(textOf(out).includes('Hello') && textOf(out).includes('tail'))
+})
+
+test('in-editor paste: the real round trip through Filament\'s p-wrapping lands on that shape', () => {
+    const original =
+        '<meta charset=\'utf-8\'><p data-pm-slice="1 1 []">Hello <span class="asignua-rte-figure asignua-rte-align-center"><img src="/ee-media/1" data-id="k1"><span class="asignua-rte-caption">Cap text</span></span> tail</p>'
+    const parsed = parseHtml(original)
+
+    for (const image of Array.from(parsed.querySelectorAll('img[src]'))) {
+        const p = parsed.createElement('p')
+
+        image.replaceWith(p)
+        p.appendChild(image)
+    }
+
+    const image = parseHtml(clean(parsed.body.innerHTML)).body.querySelector('img')
+
+    assert.equal(image.getAttribute('data-asignua-caption'), 'Cap text')
+    assert.equal(image.getAttribute('data-asignua-align'), 'center')
+})
+
+test('in-editor paste: an aligned image without a caption keeps only the alignment', () => {
+    const out = clean(
+        '<p data-pm-slice="1 1 []"><span class="asignua-rte-figure asignua-rte-align-right"></span></p><p><img src="/a.png" data-id="k"></p>',
+    )
+    const image = parseHtml(out).body.querySelector('img')
+
+    assert.equal(image.getAttribute('data-asignua-align'), 'right')
+    assert.equal(image.hasAttribute('data-asignua-caption'), false)
+})
+
+test('in-editor paste: an intact wrapper, or anything else, is returned exactly as it came', () => {
+    const intact = '<p data-pm-slice="1 1 []"><span class="asignua-rte-figure"><img src="/a.png" data-id="k"><span class="asignua-rte-caption">C</span></span></p>'
+    const plain = '<p data-pm-slice="1 1 []" class="lead" style="color:red">x</p>'
+
+    assert.equal(clean(intact), intact)
+    assert.equal(clean(plain), plain)
+    assert.equal(clean('<p data-pm-slice="1 1 []"><span class="asignua-rte-figure"></span></p><p>not an image</p>'), '<p data-pm-slice="1 1 []"><span class="asignua-rte-figure"></span></p><p>not an image</p>')
 })

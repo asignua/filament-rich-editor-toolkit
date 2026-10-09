@@ -227,6 +227,39 @@ test('an in-editor paste that needs no change keeps its marker (the same string 
     assert.equal(restrict(html, ['bold']), html)
 })
 
+// The toolkit's own tools borrow the ACTIVE state of a stock tool (so that they light up inside a
+// link / on an image) but mount an action of their own. Real markup, see the PHP test that pins it.
+const toolButton = (isActive, click) =>
+    `<button type="button" x-bind:class="{ 'fi-active': editorUpdatedAt &amp;&amp; $getEditor()?.isActive(${isActive}) }" x-on:click="${click}"></button>`
+
+const stockLink = toolButton("'link', []", "$wire.mountAction('link', { editorSelection, ...{ url: 1 } }, JSON.parse('{}'))")
+const linkOptions = toolButton("'link', []", "$wire.mountAction('linkOptions', { editorSelection, ...{ newTab: 1 } }, JSON.parse('{}'))")
+const imageProperties = toolButton("'image', []", "$wire.mountAction('imageProperties', { editorSelection }, JSON.parse('{}'))")
+
+test('a "Link options" button does not make the link mark allowed (it only borrows the link state)', () => {
+    assert.equal(allowedFromToolbar(field(button("'bold', []"), linkOptions)).has('link'), false)
+    assert.deepEqual([...allowedFromToolbar(field(button("'bold', []"), linkOptions))], ['bold'])
+})
+
+test('the stock Link button still counts, with or without Link options next to it', () => {
+    assert.equal(allowedFromToolbar(field(button("'bold', []"), stockLink)).has('link'), true)
+    assert.equal(allowedFromToolbar(field(button("'bold', []"), linkOptions, stockLink)).has('link'), true)
+})
+
+test('a toolbar of only borrowed-state tools cannot be read, so nothing is restricted (fail open)', () => {
+    assert.equal(allowedFromToolbar(field(linkOptions, imageProperties)), null)
+})
+
+test('buttons that run a command directly are unaffected by the mounted-action rule', () => {
+    const root = field(
+        toolButton("'bold', []", "$getEditor()?.chain().focus().toggleBold().run()"),
+        toolButton("'bulletList', []", "$getEditor()?.chain().focus().toggleBulletList().run()"),
+        toolButton("'heading', JSON.parse('{\\u0022level\\u0022:2}')", "$getEditor()?.chain().focus().toggleHeading({ level: 2 }).run()"),
+    )
+
+    assert.deepEqual([...allowedFromToolbar(root)].sort(), ['bold', 'bulletList', 'h2'])
+})
+
 // --- wiring in the module ----------------------------------------------------------
 
 import factory from '../../resources/js/src/paste-clean.js'

@@ -86,15 +86,43 @@ return [
 
         // Hosts the SERVER may download pictures from on the editor's behalf (Google Docs serves its
         // images from lh*.googleusercontent.com, which a browser cannot read from script).
-        // `*.example.com` = any subdomain (not the bare domain), otherwise an exact host name.
+        // `*.example.com` = any subdomain (not the bare domain; a wildcard over a public suffix such as
+        // `*.co.uk` or `*.com.ua` matches nothing), otherwise an exact host name.
         // Always https, port 443, no redirects, public addresses only. An empty list = Word only.
         'remote_image_hosts' => ['*.googleusercontent.com'],
 
         // Byte cap of one downloaded picture (KB); the field's own maximum applies when smaller.
         'remote_image_max_kb' => 5120,
 
-        // Downloads one viewer (user id, else IP) may make per minute.
+        // Downloads one viewer (user id, else IP) may make per minute, in total and per field.
+        // A guest is identified by IP: behind a reverse proxy configure Laravel's TrustProxies,
+        // or all guests share one bucket (and a proxy list that trusts everyone lets a guest
+        // choose his own address).
         'remote_image_rate_limit' => 60,
+        'remote_image_rate_limit_per_field' => 30,
+
+        // May an anonymous visitor make the server download pictures? Off: only logged-in users.
+        // A per-field PasteCleanPlugin::authorizeRemoteImages(fn (RichEditor $c) => ...) overrides it.
+        'remote_image_guests' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Front-end renderer
+    |--------------------------------------------------------------------------
+    |
+    | What RichEditorToolkit::plugins() / renderer() add besides custom attributes and embeds.
+    | Both are ON: the editor-side plugins need them at render time (a caption or an alignment
+    | that is saved but not rendered would silently vanish from the page). Turn one off to keep
+    | the output of a 1.0 site byte for byte: `link_options` = no rel/target normalisation (stored
+    | values pass the sanitizer as before), `image_properties` = no image wrapper / caption / alt="".
+    | The named arguments `renderer(..., links:, images:)` override these per call.
+    |
+    */
+
+    'renderer' => [
+        'link_options' => true,
+        'image_properties' => true,
     ],
 
     /*

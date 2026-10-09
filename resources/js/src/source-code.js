@@ -12,9 +12,21 @@
 //
 // WHEN IT SYNCS. The textarea is pushed into the editor (a) 400 ms after the last keystroke,
 // (b) on `change`/`focusout` (a click on Save blurs it first, so the value is in the state before
-// the click is handled), (c) in a capturing `submit` listener on the enclosing <form>, and (d) when
-// leaving source mode. So a form saved while still in source mode keeps the source. The
+// the click is handled), (c) in a capturing `submit` listener on the enclosing <form>, (d) when
+// leaving source mode, (e) synchronously on any keydown with Ctrl/Cmd held (Filament's save
+// shortcut, mod+s, fires neither focusout nor submit before it reads the state), and (f) when
+// Livewire is about to send a request (its `commit` hook, best effort). So a form saved while still in source mode keeps the source. The
 // textarea itself is never rewritten while the user types; it is only replaced on the way in.
+//
+// THE EDITOR CHANGES UNDER THE TEXTAREA. While the source is shown, the document can still be
+// changed from outside: the server rewrites it (`saveFileAttachments` swaps the `data-id` of every
+// uploaded image on save, and Filament puts the new state into the editor with `setContent`), or
+// another script runs a command. The textarea would then keep the OLD text and its next flush would
+// push it back over the new document, resurrecting stale attachment ids. So a document change that
+// is not our own sync (`refresh()`, called from the extension's `onTransaction`) rebuilds the
+// textarea from the editor, keeps the caret as near as it can, and resets the "last pushed" value.
+// The editor wins: text typed in the last 400 ms that was not flushed yet is replaced too, because
+// pushing it would overwrite the newer document.
 //
 // THE NOTICE. After leaving, the typed HTML is compared with what the editor now holds
 // (`materiallyDiffers`, see source-html.js); a difference shows a non-blocking status message
@@ -59,6 +71,7 @@ export const createSourceView = (root, editor, options) => {
     let syncing = false
     let locked = []
     let form = null
+    let unhook = null
 
     const clearNotice = () => {
         notice?.remove()
@@ -126,6 +139,16 @@ export const createSourceView = (root, editor, options) => {
         timer = setTimeout(flush, delay)
     }
 
+    // Ctrl/Cmd + anything (mod+s is Filament's save shortcut): the textarea keeps focus, so no blur
+    // and no submit comes before the shortcut's own handler reads the state. Flush NOW; the update
+    // handler of Filament copies the state on the next tick, i.e. before the shortcut's handler
+    // on `window` runs. A bare modifier press changes nothing, so it is skipped.
+    const onKeydown = (event) => {
+        if ((event.ctrlKey || event.metaKey) && !['Control', 'Meta'].includes(event.key)) {
+            flush()
+        }
+    }
+
     const onInput = () => {
         autosize()
         schedule()
@@ -167,11 +190,62 @@ export const createSourceView = (root, editor, options) => {
         locked = []
     }
 
+    const detach = () => {
+        if (typeof unhook === 'function') {
+            unhook()
+        }
+
+        unhook = null
+    }
+
     const api = {
         isActive: () => active,
         /** True while a sync is calling setContent, so the owner can tell it from the user typing. */
         isSyncing: () => syncing,
         clearNotice,
+        /**
+         * The editor's document changed while the source is shown and it was not our own sync:
+         * show the editor's HTML (see the header comment). Returns whether anything was rebuilt.
+         */
+        refresh() {
+            if (!active || !textarea || syncing) {
+                return false
+            }
+
+            if (timer !== null) {
+                clearTimeout(timer)
+                timer = null
+            }
+
+            const next = prettyHtml(editor.getHTML(), { indent: options.indent, parseHtml: options.parseHtml })
+
+            // The common case after a save: nothing the user sees changes. Leave the caret alone.
+            if (next === textarea.value && next === synced) {
+                return false
+            }
+
+            const focused = doc.activeElement === textarea
+            const start = textarea.selectionStart
+            const end = textarea.selectionEnd
+            const oldLength = textarea.value.length
+
+            textarea.value = next
+            initial = next
+            synced = next
+
+            if (focused) {
+                // Best effort: the same offset, from the end when the caret was nearer to it, so
+                // that an edit near the top (an attribute rewritten) does not throw the caret around.
+                const place = (offset) => (oldLength - offset < offset ? next.length - (oldLength - offset) : offset)
+                const clamp = (offset) => Math.max(0, Math.min(next.length, offset))
+
+                textarea.setSelectionRange(clamp(place(start)), clamp(place(end)))
+            }
+
+            autosize()
+
+            return true
+        },
         get textarea() {
             return textarea
         },
@@ -199,6 +273,8 @@ export const createSourceView = (root, editor, options) => {
             textarea.addEventListener('input', onInput)
             textarea.addEventListener('change', flush)
             textarea.addEventListener('focusout', flush)
+            textarea.addEventListener('keydown', onKeydown)
+            unhook = options.onCommit ? options.onCommit(flush) || null : null
 
             form = root.closest('form')
             form?.addEventListener('submit', flush, true)
@@ -224,6 +300,7 @@ export const createSourceView = (root, editor, options) => {
 
             form?.removeEventListener('submit', flush, true)
             form = null
+            detach()
             textarea.remove()
             textarea = null
             root.classList.remove(ACTIVE_CLASS)
@@ -250,6 +327,7 @@ export const createSourceView = (root, editor, options) => {
                 // The editor is going away; the state was already synced by the last flush.
                 active = false
                 form?.removeEventListener('submit', flush, true)
+                detach()
                 textarea?.remove()
                 textarea = null
                 root.classList.remove(ACTIVE_CLASS)
@@ -261,6 +339,20 @@ export const createSourceView = (root, editor, options) => {
     }
 
     return api
+}
+
+/**
+ * Runs `callback` just before Livewire sends a request (its `commit` hook), when Livewire is on the
+ * page. Best effort: returns a function that removes the hook, or null.
+ */
+const livewireCommitHook = (callback) => {
+    try {
+        const off = window.Livewire?.hook?.('commit', () => callback())
+
+        return typeof off === 'function' ? off : null
+    } catch {
+        return null
+    }
 }
 
 export default () => {
@@ -283,6 +375,7 @@ export default () => {
             if (root) {
                 view = createSourceView(root, this.editor, {
                     parseHtml,
+                    onCommit: livewireCommitHook,
                     indent,
                     label: params.get('t-label') || undefined,
                     notice: params.get('t-notice') || undefined,
@@ -293,6 +386,16 @@ export default () => {
             // The user kept editing: the notice is about the previous round trip.
             if (view && !view.isSyncing() && !view.isActive()) {
                 view.clearNotice()
+            }
+
+            view?.refresh()
+        },
+        // Filament puts a state that came from the server into the editor with a plain
+        // `setContent(state)`, which does NOT emit `update` (TipTap's emitUpdate defaults to false);
+        // the transaction is the only signal there is.
+        onTransaction({ transaction }) {
+            if (view && transaction.docChanged) {
+                view.refresh()
             }
         },
         onDestroy() {

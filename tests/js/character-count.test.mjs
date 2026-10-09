@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { JSDOM } from 'jsdom'
 import { Schema, DOMParser as PmDOMParser, Node as PmNode } from 'prosemirror-model'
 
+import { parseRules } from '../../resources/js/src/image-properties.js'
 import {
     countText,
     createCounter,
@@ -64,8 +65,19 @@ const schema = new Schema({
             group: 'inline',
             inline: true,
             atom: true,
-            attrs: { src: { default: null } },
-            parseDOM: [{ tag: 'img', getAttrs: (el) => ({ src: el.getAttribute('src') }) }],
+            attrs: { src: { default: null }, caption: { default: null }, align: { default: null } },
+            // The REAL parse rules of the image-properties module: a captioned image arrives as a
+            // wrapper whose caption must end up in an attribute, never in the text.
+            parseDOM: parseRules().map((rule) => ({
+                ...rule,
+                getAttrs: (el) => {
+                    if (rule.getAttrs && rule.getAttrs(el) === false) {
+                        return false
+                    }
+
+                    return { src: el.getAttribute('src'), caption: el.getAttribute('data-asignua-caption') || null }
+                },
+            })),
             toDOM: (node) => ['img', { src: node.attrs.src }],
         },
         hardBreak: { group: 'inline', inline: true, selectable: false, parseDOM: [{ tag: 'br' }], toDOM: () => ['br'] },

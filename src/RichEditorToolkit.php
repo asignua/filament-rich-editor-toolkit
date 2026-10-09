@@ -55,14 +55,20 @@ final class RichEditorToolkit
      * otherwise the per-field attributes are saved and then dropped on the page. Null means
      * the config (plus {@see self::allowAttributes()}).
      *
+     * `$links` / `$images` switch the two render-time rewrites that older versions did not have
+     * (link `rel`/`target` normalisation, the image wrapper with caption and alignment, `alt=""`).
+     * Null follows `rich-editor-toolkit.renderer.link_options` / `.image_properties` (both on).
+     * Turning images off only stops the RENDERING: a caption saved by `ImagePropertiesPlugin` is
+     * then not shown on the page.
+     *
      * @param array<mixed>|string|null $content
      * @param list<string>|null        $attributes
      * @param list<string>|null        $types
      */
-    public static function renderer(array|string|null $content, ?array $attributes = null, ?array $types = null): ToolkitRenderer
+    public static function renderer(array|string|null $content, ?array $attributes = null, ?array $types = null, ?bool $links = null, ?bool $images = null): ToolkitRenderer
     {
         return ToolkitRenderer::make($content)
-            ->plugins(self::plugins($attributes, $types));
+            ->plugins(self::plugins($attributes, $types, $links, $images));
     }
 
     /**
@@ -72,10 +78,12 @@ final class RichEditorToolkit
      *
      * @param list<string>|null $attributes
      * @param list<string>|null $types
+     * @param bool|null         $links      add {@see LinkOptionsPlugin}; null = `renderer.link_options` config (true)
+     * @param bool|null         $images     add {@see ImagePropertiesPlugin}; null = `renderer.image_properties` config (true)
      *
      * @return list<CustomAttributesPlugin|EmbedPlugin|ImagePropertiesPlugin|LinkOptionsPlugin>
      */
-    public static function plugins(?array $attributes = null, ?array $types = null): array
+    public static function plugins(?array $attributes = null, ?array $types = null, ?bool $links = null, ?bool $images = null): array
     {
         $customAttributes = CustomAttributesPlugin::make();
 
@@ -90,8 +98,8 @@ final class RichEditorToolkit
         return [
             $customAttributes,
             EmbedPlugin::make(),
-            ImagePropertiesPlugin::make(),
-            LinkOptionsPlugin::make(),
+            ...($images ?? (bool) config('rich-editor-toolkit.renderer.image_properties', true) ? [ImagePropertiesPlugin::make()] : []),
+            ...($links ?? (bool) config('rich-editor-toolkit.renderer.link_options', true) ? [LinkOptionsPlugin::make()] : []),
         ];
     }
 

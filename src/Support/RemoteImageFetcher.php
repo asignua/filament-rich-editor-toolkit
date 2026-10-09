@@ -7,6 +7,7 @@ namespace Asignua\RichEditorToolkit\Support;
 use Closure;
 use Illuminate\Support\Facades\Http;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamInterface;
 use RuntimeException;
 use Throwable;
 
@@ -33,8 +34,15 @@ use Throwable;
  *     and use). TLS still verifies the certificate against the host name.
  *  5. NO REDIRECTS. A 3xx is a failure: a redirect is a new URL that would need steps 1-4 again, and a
  *     allow-listed host that redirects elsewhere is exactly the open-redirect abuse this guards.
- *  6. LIMITS. Connect/total timeout, and a byte cap enforced while downloading (`progress`), by
- *     `Content-Length` (`on_headers`) and once more on the finished body.
+ *  6. LIMITS. Connect/total timeout and a byte cap on the BYTES THAT COME OFF THE WIRE: `Content-Length`
+ *     (`on_headers`), libcurl's own `CURLOPT_MAXFILESIZE_LARGE`, and a capped sink that refuses the
+ *     write that crosses the cap (which makes libcurl abort the transfer). The response is never
+ *     decompressed ({@see self::requestOptions()}): a body that arrives `Content-Encoding: gzip`
+ *     is refused, because a few kilobytes of gzip inflate into gigabytes (a "gzip bomb").
+ *  6a. NO PROXY. The request goes out WITHOUT a proxy, whatever `HTTPS_PROXY` / `ALL_PROXY` say:
+ *     the pin in step 4 only fixes where the client connects, and with a proxy that is the proxy,
+ *     which then resolves the name itself and can reach an internal address. A server that can only
+ *     get out through an egress proxy cannot use remote pictures (Word's keep working).
  *  7. CONTENT. The type is decided by the file's MAGIC BYTES (png, jpeg, gif, webp), never by the
  *     `Content-Type` the remote server claims; anything else (svg, html, ...) is refused.
  *
@@ -55,6 +63,8 @@ final class RemoteImageFetcher
     public const string ERR_SIZE = 'size';
 
     private const string TOO_LARGE = 'asignua-rte: too large';
+
+    private const string ENCODED = 'asignua-rte: content-encoding';
 
     public const string ERR_TYPE = 'type';
 
@@ -85,17 +95,104 @@ final class RemoteImageFetcher
     private const array NON_PUBLIC_V6 = [
         '::/128',           // unspecified
         '::1/128',          // loopback
+        '::ffff:0:0:0/96',  // IPv4-translated, SIIT (RFC 2765): ::ffff:0:a.b.c.d wraps an IPv4 address
         '64:ff9b:1::/48',   // local-use NAT64
         '100::/64',         // discard-only
         '2001::/32',        // Teredo (wraps an IPv4 address)
         '2001:2::/48',      // benchmarking
         '2001:10::/28',     // ORCHID
         '2001:db8::/32',    // documentation
+        '3fff::/20',        // documentation (RFC 9637)
+        '5f00::/16',        // SRv6 segment identifiers (RFC 9602)
         '2002::/16',        // 6to4 (wraps an IPv4 address)
         'fc00::/7',         // unique local
         'fe80::/10',        // link-local
         'fec0::/10',        // site-local (deprecated)
         'ff00::/8',         // multicast
+    ];
+
+    /**
+     * Second-level public suffixes under which unrelated parties register names: a wildcard over
+     * one of them (`*.co.uk`) would allow-list every site of the country. Best effort, NOT the
+     * Public Suffix List: it holds the common ones. The same list lives in
+     * `resources/js/src/paste-images.js` and `tests/fixtures/host-allow.json` pins them together.
+     *
+     * @var list<string>
+     */
+    public const array PUBLIC_SUFFIXES = [
+        'ac.jp',
+        'ac.uk',
+        'co.id',
+        'co.il',
+        'co.in',
+        'co.jp',
+        'co.kr',
+        'co.nz',
+        'co.th',
+        'co.uk',
+        'co.za',
+        'com.ar',
+        'com.au',
+        'com.br',
+        'com.cn',
+        'com.co',
+        'com.eg',
+        'com.es',
+        'com.hk',
+        'com.mx',
+        'com.my',
+        'com.pe',
+        'com.ph',
+        'com.pk',
+        'com.pl',
+        'com.ru',
+        'com.sa',
+        'com.sg',
+        'com.tr',
+        'com.tw',
+        'com.ua',
+        'com.ve',
+        'com.vn',
+        'edu.au',
+        'edu.cn',
+        'edu.ua',
+        'go.jp',
+        'gov.au',
+        'gov.br',
+        'gov.cn',
+        'gov.ua',
+        'gov.uk',
+        'in.ua',
+        'kiev.ua',
+        'ltd.uk',
+        'lviv.ua',
+        'me.uk',
+        'ne.jp',
+        'net.au',
+        'net.br',
+        'net.cn',
+        'net.in',
+        'net.nz',
+        'net.pl',
+        'net.ru',
+        'net.tr',
+        'net.ua',
+        'net.uk',
+        'or.jp',
+        'or.kr',
+        'org.au',
+        'org.br',
+        'org.cn',
+        'org.in',
+        'org.nz',
+        'org.pl',
+        'org.ru',
+        'org.tr',
+        'org.ua',
+        'org.uk',
+        'org.za',
+        'plc.uk',
+        'sch.uk',
     ];
 
     /** @var Closure(string): list<string> */
@@ -123,38 +220,37 @@ final class RemoteImageFetcher
 
         $address = $this->publicAddress($host);
 
+        $sink = new CappedSink($maxBytes);
+
         try {
-            $response = Http::withOptions([
-                'curl' => [CURLOPT_RESOLVE => [$host.':443:'.(str_contains($address, ':') ? '['.$address.']' : $address)]],
-                'on_headers' => static function (ResponseInterface $response) use ($maxBytes): void {
-                    if ((int) $response->getHeaderLine('Content-Length') > $maxBytes) {
-                        throw new RuntimeException(self::TOO_LARGE);
-                    }
-                },
-                'progress' => static function (mixed $downloadTotal, mixed $downloaded) use ($maxBytes): void {
-                    if (is_numeric($downloaded) && $downloaded > $maxBytes) {
-                        throw new RuntimeException(self::TOO_LARGE);
-                    }
-                },
-            ])
+            $response = Http::withOptions(self::requestOptions($host, $address, $maxBytes, $sink))
                 ->withoutRedirecting()
                 ->connectTimeout(5)
                 ->timeout(15)
                 ->accept('image/*')
+                ->withHeaders(['Accept-Encoding' => 'identity'])
                 ->get($path);
         } catch (Throwable $exception) {
-            throw new RemoteImageException(self::isTooLarge($exception) ? self::ERR_SIZE : self::ERR_HTTP, $exception);
+            throw new RemoteImageException($sink->exceeded || self::isTooLarge($exception) ? self::ERR_SIZE : self::ERR_HTTP, $exception);
         }
 
         if (!$response->successful()) {
             throw new RemoteImageException(self::ERR_HTTP);
         }
 
-        $body = $response->body();
+        // The same two checks as `on_headers`, on the finished response: a client that never ran that
+        // hook (a fake, a handler that replaces it) must not skip them.
+        $encoding = strtolower(trim($response->header('Content-Encoding')));
 
-        if (strlen($body) > $maxBytes) {
+        if ($encoding !== '' && $encoding !== 'identity') {
+            throw new RemoteImageException(self::ERR_HTTP);
+        }
+
+        if ((int) $response->header('Content-Length') > $maxBytes) {
             throw new RemoteImageException(self::ERR_SIZE);
         }
+
+        $body = self::readCapped($response->toPsrResponse()->getBody(), $maxBytes);
 
         $mime = self::sniffMime($body);
 
@@ -163,6 +259,66 @@ final class RemoteImageFetcher
         }
 
         return new RemoteImage($mime, $body);
+    }
+
+    /**
+     * The Guzzle options of the request, one place so that a test can pin every one of them.
+     *
+     * @internal public for the test suite
+     *
+     * @return array<string, mixed>
+     */
+    public static function requestOptions(string $host, string $address, int $maxBytes, CappedSink $sink): array
+    {
+        return [
+            // Step 6a. An empty string is Guzzle's "no proxy, and do not look at the environment"
+            // (a selected proxy is final; only a missing option falls back to HTTPS_PROXY/ALL_PROXY).
+            'proxy' => '',
+            // Step 6: the bytes are counted as they arrive, so they must be the bytes that were sent.
+            'decode_content' => false,
+            'sink' => $sink->stream,
+            'curl' => [
+                // Step 4. IPv6 goes in brackets.
+                CURLOPT_RESOLVE => [$host.':443:'.(str_contains($address, ':') ? '['.$address.']' : $address)],
+                // NOT CURLOPT_MAXFILESIZE_LARGE: Guzzle 8 keeps an allow-list of curl options and refuses
+                // it with an InvalidArgumentException. The capped sink below is the hard stop instead.
+            ],
+            'on_headers' => static function (ResponseInterface $response) use ($maxBytes): void {
+                if ((int) $response->getHeaderLine('Content-Length') > $maxBytes) {
+                    throw new RuntimeException(self::TOO_LARGE);
+                }
+
+                $encoding = strtolower(trim($response->getHeaderLine('Content-Encoding')));
+
+                if ($encoding !== '' && $encoding !== 'identity') {
+                    throw new RuntimeException(self::ENCODED);
+                }
+            },
+        ];
+    }
+
+    /**
+     * Reads a body in chunks and never holds more than `$maxBytes` + one chunk.
+     *
+     * @throws RemoteImageException
+     */
+    private static function readCapped(StreamInterface $stream, int $maxBytes): string
+    {
+        if ($stream->isSeekable()) {
+            $stream->rewind();
+        }
+
+        $body = '';
+
+        while (!$stream->eof()) {
+            $body .= $stream->read(8192);
+
+            if (strlen($body) > $maxBytes) {
+                throw new RemoteImageException(self::ERR_SIZE);
+            }
+        }
+
+        return $body;
     }
 
     /**
@@ -217,7 +373,8 @@ final class RemoteImageFetcher
 
     /**
      * `*.example.com` = any subdomain of example.com (not example.com itself); otherwise an exact,
-     * case-insensitive match. A wildcard needs at least two labels after it (`*.com` is refused).
+     * case-insensitive match. A wildcard needs at least two labels after it and they must not be a
+     * known public suffix ({@see self::PUBLIC_SUFFIXES}): `*.com`, `*.co.uk` and `*.com.ua` are refused.
      *
      * @param list<string> $patterns
      */
@@ -235,7 +392,9 @@ final class RemoteImageFetcher
             if (str_starts_with($pattern, '*.')) {
                 $suffix = substr($pattern, 1);
 
-                if (substr_count($suffix, '.') >= 2 && str_ends_with($host, $suffix) && strlen($host) > strlen($suffix)) {
+                if (substr_count($suffix, '.') >= 2
+                    && !in_array(substr($suffix, 1), self::PUBLIC_SUFFIXES, true)
+                    && str_ends_with($host, $suffix) && strlen($host) > strlen($suffix)) {
                     return true;
                 }
 

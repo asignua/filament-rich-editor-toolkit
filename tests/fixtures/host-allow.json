@@ -1,0 +1,220 @@
+{
+ "suffixes": [
+  "ac.jp",
+  "ac.uk",
+  "co.id",
+  "co.il",
+  "co.in",
+  "co.jp",
+  "co.kr",
+  "co.nz",
+  "co.th",
+  "co.uk",
+  "co.za",
+  "com.ar",
+  "com.au",
+  "com.br",
+  "com.cn",
+  "com.co",
+  "com.eg",
+  "com.es",
+  "com.hk",
+  "com.mx",
+  "com.my",
+  "com.pe",
+  "com.ph",
+  "com.pk",
+  "com.pl",
+  "com.ru",
+  "com.sa",
+  "com.sg",
+  "com.tr",
+  "com.tw",
+  "com.ua",
+  "com.ve",
+  "com.vn",
+  "edu.au",
+  "edu.cn",
+  "edu.ua",
+  "go.jp",
+  "gov.au",
+  "gov.br",
+  "gov.cn",
+  "gov.ua",
+  "gov.uk",
+  "in.ua",
+  "kiev.ua",
+  "ltd.uk",
+  "lviv.ua",
+  "me.uk",
+  "ne.jp",
+  "net.au",
+  "net.br",
+  "net.cn",
+  "net.in",
+  "net.nz",
+  "net.pl",
+  "net.ru",
+  "net.tr",
+  "net.ua",
+  "net.uk",
+  "or.jp",
+  "or.kr",
+  "org.au",
+  "org.br",
+  "org.cn",
+  "org.in",
+  "org.nz",
+  "org.pl",
+  "org.ru",
+  "org.tr",
+  "org.ua",
+  "org.uk",
+  "org.za",
+  "plc.uk",
+  "sch.uk"
+ ],
+ "cases": [
+  {
+   "host": "img.example.com",
+   "patterns": [
+    "img.example.com"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "IMG.Example.COM",
+   "patterns": [
+    "img.example.com"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "a.img.example.com",
+   "patterns": [
+    "img.example.com"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "a.b.example.com",
+   "patterns": [
+    "*.example.com"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "example.com",
+   "patterns": [
+    "*.example.com"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "badexample.com",
+   "patterns": [
+    "*.example.com"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "x.com",
+   "patterns": [
+    "*.com"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "x.com",
+   "patterns": [
+    "*"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "x.com",
+   "patterns": [
+    "",
+    " "
+   ],
+   "allowed": false
+  },
+  {
+   "host": "lh7-rt.googleusercontent.com",
+   "patterns": [
+    "*.googleusercontent.com"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "evil.co.uk",
+   "patterns": [
+    "*.co.uk"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "evil.com.ua",
+   "patterns": [
+    "*.com.ua"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "shop.evil.com.ua",
+   "patterns": [
+    "*.com.ua"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "evil.co.jp",
+   "patterns": [
+    "*.co.jp"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "evil.org.uk",
+   "patterns": [
+    "*.ORG.UK"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "img.brand.co.uk",
+   "patterns": [
+    "*.brand.co.uk"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "brand.co.uk",
+   "patterns": [
+    "*.brand.co.uk"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "evil.in.ua",
+   "patterns": [
+    "*.in.ua"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "a.example.co.uk",
+   "patterns": [
+    "img.example.co.uk"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "img.example.co.uk",
+   "patterns": [
+    "img.example.co.uk"
+   ],
+   "allowed": true
+  }
+ ]
+}

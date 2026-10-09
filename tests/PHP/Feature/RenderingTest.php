@@ -6,6 +6,8 @@ namespace Asignua\RichEditorToolkit\Tests\Feature;
 
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
+use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
+use Asignua\RichEditorToolkit\Plugins\LinkOptionsPlugin;
 use Asignua\RichEditorToolkit\RichEditorToolkit;
 use Asignua\RichEditorToolkit\Tests\TestCase;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
@@ -305,5 +307,66 @@ class RenderingTest extends TestCase
         $html = RichEditorToolkit::renderer('<iframe src="https://www.youtube.com/embed/videoseries?list=PLabcdefghij"></iframe>')->toHtml();
 
         $this->assertStringNotContainsString('<iframe', $html);
+    }
+
+    // --- the two render-time plugins added after 1.0 can be turned off ---------------------------------
+
+    /**
+     * @param list<object> $plugins
+     *
+     * @return list<string>
+     */
+    private function names(array $plugins): array
+    {
+        return array_map(static fn (object $plugin): string => $plugin::class, $plugins);
+    }
+
+    public function test_link_options_and_image_properties_are_on_by_default(): void
+    {
+        $names = $this->names(RichEditorToolkit::plugins());
+
+        $this->assertContains(LinkOptionsPlugin::class, $names);
+        $this->assertContains(ImagePropertiesPlugin::class, $names);
+    }
+
+    public function test_the_config_switches_them_off(): void
+    {
+        config()->set('rich-editor-toolkit.renderer.link_options', false);
+        config()->set('rich-editor-toolkit.renderer.image_properties', false);
+
+        $names = $this->names(RichEditorToolkit::plugins());
+
+        $this->assertNotContains(LinkOptionsPlugin::class, $names);
+        $this->assertNotContains(ImagePropertiesPlugin::class, $names);
+    }
+
+    public function test_named_arguments_beat_the_config(): void
+    {
+        $names = $this->names(RichEditorToolkit::plugins(links: false, images: false));
+
+        $this->assertNotContains(LinkOptionsPlugin::class, $names);
+        $this->assertNotContains(ImagePropertiesPlugin::class, $names);
+
+        config()->set('rich-editor-toolkit.renderer.link_options', false);
+        $this->assertContains(LinkOptionsPlugin::class, $this->names(RichEditorToolkit::plugins(links: true)));
+    }
+
+    public function test_without_link_options_a_stored_rel_is_not_normalised(): void
+    {
+        $stored = '<p><a href="https://a.test/" target="_blank" rel="noopener bogus">x</a></p>';
+
+        $on = RichEditorToolkit::renderer($stored)->toHtml();
+        $off = RichEditorToolkit::renderer($stored, links: false)->toHtml();
+
+        $this->assertStringNotContainsString('bogus', $on);
+        $this->assertStringContainsString('bogus', $off, 'the stored rel passes untouched, exactly as in 1.0');
+    }
+
+    public function test_without_image_properties_a_decorative_alt_is_dropped_as_in_1_0(): void
+    {
+        $stored = '<p><img src="https://a.test/a.png" alt=""></p>';
+
+        $this->assertStringContainsString('alt', RichEditorToolkit::renderer($stored)->toHtml());
+        $this->assertStringNotContainsString('alt', RichEditorToolkit::renderer($stored, images: false)->toHtml());
     }
 }

@@ -287,6 +287,39 @@ class PluginsTest extends TestCase
         $this->assertStringContainsString('fi-fo-rich-editor', $html);
     }
 
+    public function test_strict_paste_can_tell_the_stock_link_button_from_link_options(): void
+    {
+        // paste-strict.js ignores a button whose click mounts an action of a DIFFERENT name than the
+        // node/mark in its `isActive()`: "Link options" and "Image properties" borrow the active
+        // state of `link` / `image` (so that they light up there) but are not the Link button.
+        // This pins the real markup both rules depend on.
+        $this->actingAs(\Workbench\App\Models\User::factory()->create());
+
+        $html = html_entity_decode(Livewire::test(DemoForm::class)->html(), ENT_QUOTES);
+
+        preg_match_all('/<button\b[^>]*>/s', $html, $matches);
+        $buttons = $matches[0];
+
+        $find = static fn (string $label): string => collect($buttons)->first(static fn (string $button): bool => str_contains($button, 'aria-label="'.$label.'"')) ?? '';
+
+        $stock = $find('Link');
+        $options = $find('Link options');
+        $image = $find('Image properties');
+
+        $this->assertMatchesRegularExpression("/isActive\(\s*['\"]link['\"]/", $stock);
+        $this->assertMatchesRegularExpression("/mountAction\(\s*['\"]link['\"]/", $stock, 'the stock button mounts the action of its own name');
+
+        $this->assertMatchesRegularExpression("/isActive\(\s*['\"]link['\"]/", $options, 'the borrowed state that fooled strict paste');
+        $this->assertMatchesRegularExpression("/mountAction\(\s*['\"]linkOptions['\"]/", $options);
+
+        $this->assertMatchesRegularExpression("/isActive\(\s*['\"]image['\"]/", $image);
+        $this->assertMatchesRegularExpression("/mountAction\(\s*['\"]imageProperties['\"]/", $image);
+
+        // Directly-run stock tools carry no mountAction, so the rule never touches them.
+        $this->assertDoesNotMatchRegularExpression('/mountAction/', $find('Bold'));
+        $this->assertStringContainsString('x-on:click', $stock, 'the attribute paste-strict.js reads');
+    }
+
     public function test_the_fullscreen_plugin_is_a_toggle_tool_without_a_server_half(): void
     {
         $plugin = FullscreenPlugin::make();

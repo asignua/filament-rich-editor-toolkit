@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Asignua\RichEditorToolkit\Tests\Feature;
 
+use Asignua\RichEditorToolkit\Support\CappedSink;
 use Asignua\RichEditorToolkit\Support\RemoteImageException;
 use Asignua\RichEditorToolkit\Support\RemoteImageFetcher;
 use Asignua\RichEditorToolkit\Tests\TestCase;
@@ -11,6 +12,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Http\Message\RequestInterface;
 
 /**
  * The SSRF guard of the Google Docs picture download. The network is never touched: HTTP is
@@ -133,6 +135,178 @@ class RemoteImageFetcherTest extends TestCase
 
         $this->assertSame(RemoteImageFetcher::ERR_TYPE, $this->refusal(fn () => $this->fetcher()->fetch(self::URL, self::HOSTS, 1024, ['image/png', 'image/jpeg'])));
         $this->assertSame('image/gif', $this->fetcher()->fetch(self::URL, self::HOSTS, 1024, ['image/gif'])->mime);
+    }
+
+    // --- the request that actually leaves ---------------------------------------------------------------
+
+    /**
+     * Runs one fetch with the real option set and returns the Guzzle options the HTTP layer saw.
+     *
+     * @return array<string, mixed>
+     */
+    private function sentOptions(string $address = '142.250.74.33', int $maxBytes = 1024): array
+    {
+        $seen = [];
+
+        Http::fake(['*' => Http::response(self::PNG)]);
+        // `use (&$seen)` on the OUTER closure: an arrow function would capture a copy.
+        Http::globalMiddleware(static function (callable $handler) use (&$seen): callable {
+            return static function (RequestInterface $request, array $options) use ($handler, &$seen) {
+                $seen = $options;
+
+                return $handler($request, $options);
+            };
+        });
+
+        $this->fetcher([$address])->fetch(self::URL, self::HOSTS, $maxBytes);
+
+        return $seen;
+    }
+
+    public function test_the_request_goes_out_without_a_proxy_whatever_the_environment_says(): void
+    {
+        // Guzzle would otherwise read this and send the request (and the DNS lookup) through it.
+        putenv('HTTPS_PROXY=http://proxy.internal:3128');
+        putenv('ALL_PROXY=http://proxy.internal:3128');
+
+        try {
+            $options = $this->sentOptions();
+        } finally {
+            putenv('HTTPS_PROXY');
+            putenv('ALL_PROXY');
+        }
+
+        // '' is a decision ("no proxy"), not a missing option: only a missing option falls back to the environment.
+        $this->assertArrayHasKey('proxy', $options);
+        $this->assertSame('', $options['proxy']);
+    }
+
+    public function test_the_response_is_not_decompressed_and_written_to_a_capped_sink(): void
+    {
+        $options = $this->sentOptions('142.250.74.33', 4096);
+
+        $this->assertFalse($options['decode_content']);
+        $this->assertIsResource($options['sink']);
+        // Guzzle 8 rejects CURLOPT_MAXFILESIZE_LARGE outright, so it must not be there.
+        $this->assertArrayNotHasKey(CURLOPT_MAXFILESIZE_LARGE, $options['curl']);
+
+        // (Http::fake already wrote the fake body into the sink; this one write crosses the cap whatever is in there.)
+        $this->assertFalse(@fwrite($options['sink'], str_repeat('x', 4097)), 'the sink is capped at the byte limit it was built for');
+    }
+
+    public function test_the_connection_is_pinned_to_the_checked_address(): void
+    {
+        $this->assertSame(['lh7-rt.googleusercontent.com:443:142.250.74.33'], $this->sentOptions('142.250.74.33')['curl'][CURLOPT_RESOLVE]);
+    }
+
+    public function test_an_ipv6_address_is_pinned_in_brackets(): void
+    {
+        $this->assertSame(['lh7-rt.googleusercontent.com:443:[2a00:1450:4001:81b::200e]'], $this->sentOptions('2a00:1450:4001:81b::200e')['curl'][CURLOPT_RESOLVE]);
+    }
+
+    public function test_identity_encoding_is_requested(): void
+    {
+        Http::fake(['*' => Http::response(self::PNG)]);
+
+        $this->fetcher()->fetch(self::URL, self::HOSTS, 1024);
+
+        Http::assertSent(fn (Request $request): bool => $request->header('Accept-Encoding') === ['identity']);
+    }
+
+    public function test_a_compressed_response_is_refused_not_inflated(): void
+    {
+        // The compressed bytes are tiny and under any cap; what they would inflate to is not.
+        Http::fake(['*' => Http::response(gzencode(self::PNG.str_repeat("\0", 100000)), 200, ['Content-Encoding' => 'gzip'])]);
+
+        $this->assertSame(RemoteImageFetcher::ERR_HTTP, $this->refusal(fn () => $this->fetcher()->fetch(self::URL, self::HOSTS, 1024)));
+    }
+
+    public function test_an_explicit_identity_encoding_is_fine(): void
+    {
+        Http::fake(['*' => Http::response(self::PNG, 200, ['Content-Encoding' => 'identity'])]);
+
+        $this->assertSame('image/png', $this->fetcher()->fetch(self::URL, self::HOSTS, 1024)->mime);
+    }
+
+    public function test_a_declared_length_over_the_cap_is_refused_before_the_body(): void
+    {
+        Http::fake(['*' => Http::response(self::PNG, 200, ['Content-Length' => '999999'])]);
+
+        $this->assertSame(RemoteImageFetcher::ERR_SIZE, $this->refusal(fn () => $this->fetcher()->fetch(self::URL, self::HOSTS, 1024)));
+    }
+
+    public function test_the_sink_refuses_the_write_that_crosses_the_cap(): void
+    {
+        $sink = new CappedSink(10);
+
+        $this->assertSame(6, fwrite($sink->stream, 'abcdef'));
+        $this->assertFalse($sink->exceeded);
+        $this->assertSame(4, fwrite($sink->stream, 'ghij'), 'exactly at the cap is allowed');
+
+        // A failed write is what makes libcurl abort the transfer.
+        $this->assertFalse(@fwrite($sink->stream, 'k'));
+        $this->assertTrue($sink->exceeded);
+
+        rewind($sink->stream);
+        $this->assertSame('abcdefghij', stream_get_contents($sink->stream));
+    }
+
+    public function test_a_sink_write_over_the_cap_in_one_piece_is_refused(): void
+    {
+        $sink = new CappedSink(4);
+
+        $this->assertFalse(@fwrite($sink->stream, 'abcde'));
+        $this->assertTrue($sink->exceeded);
+    }
+
+    // --- wildcards and public suffixes (the JS twin reads the same fixture) --------------------------------
+
+    public function test_wildcard_cases_from_the_shared_fixture(): void
+    {
+        $fixture = json_decode((string) file_get_contents(__DIR__.'/../../fixtures/host-allow.json'), true, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertSame($fixture['suffixes'], RemoteImageFetcher::PUBLIC_SUFFIXES, 'the PHP list and the fixture (and with it the JS list) must be the same');
+
+        foreach ($fixture['cases'] as $case) {
+            $this->assertSame($case['allowed'], RemoteImageFetcher::hostAllowed($case['host'], $case['patterns']), $case['host'].' against '.implode(',', $case['patterns']));
+        }
+    }
+
+    public function test_a_wildcard_over_a_public_suffix_matches_nothing(): void
+    {
+        $this->assertFalse(RemoteImageFetcher::hostAllowed('evil.co.uk', ['*.co.uk']));
+        $this->assertFalse(RemoteImageFetcher::hostAllowed('evil.com.ua', ['*.com.ua']));
+        $this->assertTrue(RemoteImageFetcher::hostAllowed('img.brand.co.uk', ['*.brand.co.uk']));
+    }
+
+    // --- more IPv6 ---------------------------------------------------------------------------------------
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function moreNonPublicV6(): array
+    {
+        return [
+            'ipv4-translated loopback (RFC 2765)' => ['::ffff:0:127.0.0.1'],
+            'ipv4-translated metadata' => ['::ffff:0:a9fe:a9fe'],
+            'ipv4-translated public still refused' => ['::ffff:0:8.8.8.8'],
+            'documentation 3fff::/20' => ['3fff::1'],
+            'documentation 3fff::/20 end' => ['3fff:0fff:ffff::1'],
+            'srv6 5f00::/16' => ['5f00::1'],
+        ];
+    }
+
+    #[DataProvider('moreNonPublicV6')]
+    public function test_more_ipv6_transition_and_special_ranges_are_not_public(string $address): void
+    {
+        $this->assertFalse(RemoteImageFetcher::isPublicIp($address));
+    }
+
+    public function test_neighbours_of_the_new_ipv6_ranges_stay_public(): void
+    {
+        $this->assertTrue(RemoteImageFetcher::isPublicIp('3fff:1000::1'), 'just outside 3fff::/20');
+        $this->assertTrue(RemoteImageFetcher::isPublicIp('5f01::1'), 'just outside 5f00::/16');
+        $this->assertTrue(RemoteImageFetcher::isPublicIp('2606:4700::1111'));
     }
 
     // --- size ----------------------------------------------------------------------------------------

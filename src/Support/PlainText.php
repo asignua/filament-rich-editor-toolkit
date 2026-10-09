@@ -190,6 +190,12 @@ final class PlainText
                 continue;
             }
 
+            // An image caption is an ATTRIBUTE of the image node in the editor (see ImageProperties):
+            // the counter never sees it as text, so the rule must not count it either.
+            if ($name === 'figcaption' || in_array('asignua-rte-caption', preg_split('/\s+/', trim($child->getAttribute('class'))) ?: [], true)) {
+                continue;
+            }
+
             if ($name === 'img' || in_array($child->getAttribute('data-type'), self::ATOM_TYPES, true)) {
                 $current = ($current ?? '').self::ATOM;
 

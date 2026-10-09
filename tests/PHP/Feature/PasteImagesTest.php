@@ -10,7 +10,6 @@ use Asignua\RichEditorToolkit\Tests\TestCase;
 use Filament\Forms\Components\RichEditor;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Workbench\App\Livewire\DemoForm;
 
@@ -29,8 +28,11 @@ class PasteImagesTest extends TestCase
         parent::setUp();
 
         $this->app->instance(RemoteImageFetcher::class, new RemoteImageFetcher(fn (string $host): array => ['142.250.74.33']));
-        RateLimiter::clear('asignua-rte-remote-image:guest');
+        // The action needs a logged-in user by default; the guest cases log out again.
+        $this->actingAs($this->user = \Workbench\App\Models\User::factory()->create());
     }
+
+    private \Workbench\App\Models\User $user;
 
     // --- switches ----------------------------------------------------------------------------------
 
@@ -93,8 +95,6 @@ class PasteImagesTest extends TestCase
 
     public function test_the_action_is_registered_with_the_editor_only_when_enabled(): void
     {
-        $this->actingAs(\Workbench\App\Models\User::factory()->create());
-
         $names = fn (PasteCleanPlugin $plugin): array => array_map(fn ($action): ?string => $action->getName(), $plugin->getEditorActions());
 
         $this->assertSame([PasteCleanPlugin::FETCH_ACTION], $names(PasteCleanPlugin::make()->uploadImages()));
@@ -189,8 +189,6 @@ class PasteImagesTest extends TestCase
 
     public function test_the_browser_gets_the_answer_back_from_the_modal_less_action(): void
     {
-        $this->actingAs($user = \Workbench\App\Models\User::factory()->create());
-        RateLimiter::clear('asignua-rte-remote-image:'.$user->getKey());
         Http::fake(['*' => Http::response(self::PNG)]);
 
         $test = Livewire::test(DemoForm::class)
@@ -204,8 +202,6 @@ class PasteImagesTest extends TestCase
 
     public function test_a_foreign_url_sent_to_the_action_is_refused_without_a_request(): void
     {
-        $this->actingAs($user = \Workbench\App\Models\User::factory()->create());
-        RateLimiter::clear('asignua-rte-remote-image:'.$user->getKey());
         Http::fake();
 
         $test = Livewire::test(DemoForm::class)
@@ -213,6 +209,57 @@ class PasteImagesTest extends TestCase
 
         $this->assertSame([['error' => 'host']], $test->effects['returns'] ?? []);
         Http::assertNothingSent();
+    }
+
+    public function test_a_guest_is_refused_by_default_and_nothing_is_fetched(): void
+    {
+        Http::fake(['*' => Http::response(self::PNG)]);
+        auth()->logout();
+
+        $this->assertSame(['error' => 'unauthorized'], PasteCleanPlugin::make()->uploadImages()->fetchRemoteImage(self::URL, $this->editor()));
+        Http::assertNothingSent();
+    }
+
+    public function test_guests_can_be_allowed_by_config_or_per_field(): void
+    {
+        Http::fake(['*' => Http::response(self::PNG)]);
+        auth()->logout();
+
+        config()->set('rich-editor-toolkit.paste_clean.remote_image_guests', true);
+        $this->assertArrayHasKey('dataUrl', PasteCleanPlugin::make()->uploadImages()->fetchRemoteImage(self::URL, $this->editor()));
+
+        config()->set('rich-editor-toolkit.paste_clean.remote_image_guests', false);
+        $this->assertSame(['error' => 'unauthorized'], PasteCleanPlugin::make()->uploadImages()->fetchRemoteImage(self::URL, $this->editor()));
+        $this->assertArrayHasKey('dataUrl', PasteCleanPlugin::make()->uploadImages()->authorizeRemoteImages()->fetchRemoteImage(self::URL, $this->editor()));
+    }
+
+    public function test_a_closure_decides_and_receives_the_field(): void
+    {
+        Http::fake(['*' => Http::response(self::PNG)]);
+        $seen = null;
+        $plugin = PasteCleanPlugin::make()->uploadImages()->authorizeRemoteImages(function (RichEditor $component) use (&$seen): bool {
+            $seen = $component->getName();
+
+            return false;
+        });
+
+        $this->assertSame(['error' => 'unauthorized'], $plugin->fetchRemoteImage(self::URL, $this->editor()));
+        $this->assertSame('body', $seen);
+        $this->assertSame(['error' => 'unauthorized'], PasteCleanPlugin::make()->uploadImages()->authorizeRemoteImages(false)->fetchRemoteImage(self::URL, $this->editor()));
+        Http::assertNothingSent();
+    }
+
+    public function test_the_per_field_bucket_is_separate_from_the_viewers_total(): void
+    {
+        config()->set('rich-editor-toolkit.paste_clean.remote_image_rate_limit', 10);
+        config()->set('rich-editor-toolkit.paste_clean.remote_image_rate_limit_per_field', 1);
+        Http::fake(['*' => Http::response(self::PNG)]);
+        $plugin = PasteCleanPlugin::make()->uploadImages();
+        $other = $this->contained(RichEditor::make('summary')->fileAttachments(true));
+
+        $this->assertArrayHasKey('dataUrl', $plugin->fetchRemoteImage(self::URL, $this->editor()));
+        $this->assertSame(['error' => 'rate'], $plugin->fetchRemoteImage(self::URL, $this->editor()), 'the second download on the same field');
+        $this->assertArrayHasKey('dataUrl', $plugin->fetchRemoteImage(self::URL, $other), 'another field still has its own room');
     }
 
     // --- the module ------------------------------------------------------------------------------------

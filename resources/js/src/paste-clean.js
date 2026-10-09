@@ -10,7 +10,9 @@
 // `data:` images itself, and what the clipboard carries is `file:///` paths,
 // foreign hosts or data URIs, none of which would survive as proper uploaded
 // files. Only images that already point at our own site AND carry a `data-id`
-// (i.e. were uploaded through the editor) are kept. With PasteCleanPlugin::uploadImages() the
+// (i.e. were uploaded through the editor) are kept; plus the ones paste-images.js recovered a moment
+// ago and Filament has just uploaded (a stamp attribute with a one-time token, see
+// paste-registry.js: their temporary URL may be on another host than the page). With PasteCleanPlugin::uploadImages() the
 // recoverable ones never get here as such: paste-images.js turns them into `data:` images first,
 // Filament uploads those (and gives them a `data-id`), and only what could not be recovered is
 // left for this pass to remove.
@@ -49,6 +51,8 @@
 // `node --test`, and the whole suite would silently stop covering anything (a
 // dedicated test pins this).
 
+import { ALIGN_CLASS_PREFIX, CAPTION_CLASS, FIGURE_CLASS, STASH_ALIGN, STASH_CAPTION, cleanAlign, cleanCaption } from './image-properties.js'
+import { RECOVERED_ATTRIBUTE, recoveredTokens } from './paste-registry.js'
 import { allowedFromToolbar, restrictToToolbar } from './paste-strict.js'
 
 // --- decision tables ----------------------------------------------------
@@ -807,6 +811,81 @@ const fixStructure = (body, doc) => {
     }
 }
 
+// --- a captioned image pasted inside the editor ------------------------------
+
+/**
+ * Filament's `localFiles` paste handler takes EVERY paste that contains an `<img>`, in-editor ones
+ * included, and moves each `<img>` into a `<p>` of its own with DOM calls, then serialises and
+ * hands the string to this hook. For ImagePropertiesPlugin's wrapper
+ *
+ *     <span class="asignua-rte-figure ..."><img><span class="asignua-rte-caption">Text</span></span>
+ *
+ * that leaves `<span figure><p><img></p><span caption>Text</span></span>`, and re-parsing that
+ * string closes the wrapper at the `<p>`, so what arrives here is
+ *
+ *     <p ...>...<span figure></span></p><p><img></p><span caption>Text</span>...
+ *
+ * (an EMPTY wrapper, the image in a paragraph of its own, the caption loose after it). That is
+ * recognised and joined again as an image carrying its caption and alignment in the stash
+ * attributes image-properties.js reads (data-asignua-*), the very attributes of an adopted wrapper,
+ * so the caption survives the paste instead of becoming a stray line of text. Anything that does
+ * not fit the shape is left exactly as it is.
+ *
+ * @param {string} html
+ * @param {(html: string) => Document} parseHtml
+ * @returns {string}
+ */
+const restoreSplitCaptions = (html, parseHtml) => {
+    const doc = parseHtml(html)
+    const body = doc && doc.body
+
+    if (!body) {
+        return html
+    }
+
+    let changed = false
+
+    for (const wrapper of Array.from(body.querySelectorAll(`span.${FIGURE_CLASS}`))) {
+        // An intact wrapper (it has its image) is read by the editor's own parse rule.
+        if (wrapper.children.length > 0 || (wrapper.textContent || '').trim() !== '') {
+            continue
+        }
+
+        const block = wrapper.parentElement ? wrapper.parentElement.nextElementSibling : null
+        const image = block && block.tagName === 'P' && block.children.length === 1 ? block.firstElementChild : null
+
+        if (!image || image.tagName !== 'IMG' || (block.textContent || '').trim() !== '') {
+            continue
+        }
+
+        const caption = block.nextSibling
+
+        if (caption && caption.nodeType === 1 && caption.tagName === 'SPAN' && caption.classList.contains(CAPTION_CLASS)) {
+            const text = cleanCaption(caption.textContent)
+
+            if (text !== null) {
+                image.setAttribute(STASH_CAPTION, text)
+            }
+
+            caption.remove()
+        }
+
+        const align = (wrapper.getAttribute('class') || '')
+            .split(/\s+/)
+            .map((name) => (name.startsWith(ALIGN_CLASS_PREFIX) ? cleanAlign(name.slice(ALIGN_CLASS_PREFIX.length)) : null))
+            .find((value) => value !== null)
+
+        if (align) {
+            image.setAttribute(STASH_ALIGN, align)
+        }
+
+        wrapper.remove()
+        changed = true
+    }
+
+    return changed ? body.innerHTML : html
+}
+
 // --- public pure function -----------------------------------------------
 
 /**
@@ -831,14 +910,14 @@ export const cleanPastedHtml = (html, options = {}) => {
     // In-editor ProseMirror paste. It MUST NOT be touched: the class/id/style in
     // it are what the editor deliberately keeps. TipTap itself uses the same
     // substring test.
-    if (html.includes('data-pm-slice')) {
-        return html
-    }
-
     // Defaults are computed here, not at module top level: otherwise importing
     // under Node would fail on the missing DOMParser.
     const parseHtml =
         options.parseHtml || ((source) => new globalThis.DOMParser().parseFromString(source, 'text/html'))
+
+    if (html.includes('data-pm-slice')) {
+        return html.includes(FIGURE_CLASS) ? restoreSplitCaptions(html, parseHtml) : html
+    }
     const origin =
         options.origin !== undefined
             ? options.origin
@@ -913,8 +992,13 @@ export const cleanPastedHtml = (html, options = {}) => {
 
     for (const image of Array.from(body.querySelectorAll('img'))) {
         const id = (image.getAttribute('data-id') || '').trim()
+        const token = image.getAttribute(RECOVERED_ATTRIBUTE) || ''
 
-        if (id === '' || !isOwnSrc(image.getAttribute('src'), origin)) {
+        // A forged `data-id` alone keeps nothing off-site: the token is random, registered for the
+        // duration of one recovery only, and an image needs BOTH.
+        const recovered = id !== '' && token !== '' && recoveredTokens().has(token)
+
+        if (id === '' || (!recovered && !isOwnSrc(image.getAttribute('src'), origin))) {
             image.remove()
         }
     }

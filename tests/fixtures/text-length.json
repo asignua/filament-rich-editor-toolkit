@@ -17,6 +17,8 @@
         {"name": "atoms add nothing, the spaces around them stay", "html": "<p>Hi <span data-type=\"mention\" data-id=\"1\">@Ann</span> there</p>", "characters": 9, "words": 2},
         {"name": "a custom block preview is not text", "html": "<p>Before</p><div data-type=\"customBlock\" data-id=\"video\"><p>preview text</p></div><p>After</p>", "characters": 11, "words": 2},
         {"name": "an image adds nothing", "html": "<p>Look <img src=\"/a.png\" alt=\"alt text\"> here</p>", "characters": 10, "words": 2},
+        {"name": "an image caption is an attribute, not text (span wrapper)", "html": "<p>Before <span class=\"asignua-rte-figure asignua-rte-align-center\"><img src=\"/a.png\"><span class=\"asignua-rte-caption\">A long caption here</span></span> after</p>", "characters": 13, "words": 2},
+        {"name": "an image caption is an attribute, not text (figure)", "html": "<figure><img src=\"/a.png\"><figcaption>Caption text</figcaption></figure><p>Next</p>", "characters": 4, "words": 1},
         {"name": "empty paragraph", "html": "<p></p>", "characters": 0, "words": 0},
         {"name": "only an image", "html": "<p><img src=\"/a.png\"></p>", "characters": 0, "words": 0},
         {

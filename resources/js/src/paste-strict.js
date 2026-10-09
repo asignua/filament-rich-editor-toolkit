@@ -155,10 +155,25 @@ export const allowedFromToolbar = (root) => {
             const binding = button.getAttribute('x-bind:class') || ''
             const calls = binding.split('isActive(').slice(1)
 
+            // A STOCK button that opens a dialog mounts the action of its own name
+            // (`mountAction('link', ...)`). A plugin tool that merely borrows the active state of a
+            // stock one (the toolkit's `linkOptions` and `imageProperties` use `activeKey('link')` /
+            // `activeKey('image')` so that they light up inside a link / on an image) mounts a
+            // different action, and must not count as the mark being offered: a field with only
+            // "Link options" has no Link button. Buttons without such a call (bold, lists, table, ...)
+            // run a command directly and are unaffected.
+            const mounted = (button.getAttribute('x-on:click') || button.getAttribute('@click') || '').match(
+                /mountAction\(\s*['"]([A-Za-z0-9_-]+)['"]/,
+            )
+
             for (const call of calls) {
                 const name = call.match(/^\s*["']([A-Za-z]+)["']/)
 
                 if (!name) {
+                    continue
+                }
+
+                if (mounted && mounted[1] !== name[1]) {
                     continue
                 }
 

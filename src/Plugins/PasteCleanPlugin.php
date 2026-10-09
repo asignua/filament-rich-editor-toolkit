@@ -7,6 +7,7 @@ namespace Asignua\RichEditorToolkit\Plugins;
 use Asignua\RichEditorToolkit\Assets;
 use Asignua\RichEditorToolkit\Support\RemoteImageException;
 use Asignua\RichEditorToolkit\Support\RemoteImageFetcher;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\RichEditor\Plugins\Contracts\RichContentPlugin;
@@ -80,6 +81,8 @@ class PasteCleanPlugin implements RichContentPlugin
     /** @var list<string>|null */
     protected ?array $remoteImageHosts = null;
 
+    protected bool|Closure|null $remoteImageAuthorization = null;
+
     /** The editor action the browser mounts to have a remote picture fetched. */
     public const string FETCH_ACTION = 'asignuaFetchRemoteImage';
 
@@ -150,6 +153,37 @@ class PasteCleanPlugin implements RichContentPlugin
         $this->remoteImageHosts = $hosts;
 
         return $this;
+    }
+
+    /**
+     * Who may ask the server to download a picture. The action is a server-side request whose URL
+     * comes from the browser, so it is never open by default: with nothing set it needs a LOGGED-IN
+     * user (`auth()->check()`, the default of the `paste_clean.remote_image_guests` config = false).
+     *
+     * Pass `true` / `false`, or a closure `fn (RichEditor $component): bool` (the policy of the
+     * record being edited, a role check, ...). A refusal answers `['error' => 'unauthorized']`. The
+     * field's own rules (it must take attachments and not be disabled) apply on top.
+     */
+    public function authorizeRemoteImages(bool|Closure $authorization = true): static
+    {
+        $this->remoteImageAuthorization = $authorization;
+
+        return $this;
+    }
+
+    public function canFetchRemoteImages(RichEditor $component): bool
+    {
+        $authorization = $this->remoteImageAuthorization;
+
+        if ($authorization instanceof Closure) {
+            return (bool) $authorization($component);
+        }
+
+        if (is_bool($authorization)) {
+            return $authorization;
+        }
+
+        return auth()->check() || (bool) config('rich-editor-toolkit.paste_clean.remote_image_guests', false);
     }
 
     /**
@@ -261,10 +295,21 @@ class PasteCleanPlugin implements RichContentPlugin
             return ['error' => 'disabled'];
         }
 
+        if (!$this->canFetchRemoteImages($component)) {
+            return ['error' => 'unauthorized'];
+        }
+
+        // Two buckets, both must have room: the viewer's total, and the viewer on THIS field (one
+        // runaway field cannot eat the whole allowance, and a flood of fields cannot multiply it).
+        // The viewer is the user id or, for a guest, the IP: behind a reverse proxy that is only
+        // the visitor's address when the app trusts the proxy (TrustProxies); otherwise every guest
+        // shares the proxy's address, and with a too-trusting list a guest can pick his own.
         $perMinute = max(1, (int) config('rich-editor-toolkit.paste_clean.remote_image_rate_limit', 60));
+        $perField = max(1, (int) config('rich-editor-toolkit.paste_clean.remote_image_rate_limit_per_field', 30));
         $viewer = auth()->id() ?? request()->ip() ?? 'guest';
 
-        if (!RateLimiter::attempt('asignua-rte-remote-image:'.$viewer, $perMinute, static fn (): bool => true, 60)) {
+        if (!RateLimiter::attempt('asignua-rte-remote-image:'.$viewer, $perMinute, static fn (): bool => true, 60)
+            || !RateLimiter::attempt('asignua-rte-remote-image:'.$viewer.':'.$component->getStatePath(), $perField, static fn (): bool => true, 60)) {
             return ['error' => 'rate'];
         }
 
