@@ -1,5 +1,5 @@
 /*
- * Fullscreen, character counter and source view (asignua/filament-rich-editor-toolkit).
+ * Fullscreen, character counter, source view and image properties (asignua/filament-rich-editor-toolkit).
  *
  * Hand-written, no build step. Loaded on request by the fullscreen / character-count JS
  * modules (a <link> they add themselves), so it is available with or without
@@ -200,4 +200,65 @@ html.asignua-rte-fullscreen-lock {
     .asignua-rte-count {
         transition: color 0.15s ease;
     }
+}
+
+/* --- Image properties (ImagePropertiesPlugin) ---------------------------------------- */
+
+/*
+ * The editor draws an aligned / captioned image with these rules. The class names are the ones
+ * the stored HTML carries, so they are also the ones a site styles on the front end (an optional
+ * stylesheet for that: resources/css/image-properties.css, see the README).
+ *
+ * The caption in the editor comes from `data-asignua-caption` (a node decoration), not from the
+ * caption span: the span exists only when Filament's resizable node view is off, the
+ * attribute in both cases. The span is hidden here to avoid showing the text twice.
+ */
+
+.fi-fo-rich-editor .asignua-rte-figure {
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: top;
+}
+
+.fi-fo-rich-editor .asignua-rte-figure > img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.fi-fo-rich-editor .asignua-rte-figure .asignua-rte-caption {
+    display: none;
+}
+
+.fi-fo-rich-editor .asignua-rte-figure[data-asignua-caption]::after {
+    content: attr(data-asignua-caption);
+    display: block;
+    margin-top: 0.375rem;
+    font-size: 0.875em;
+    line-height: 1.4;
+    color: var(--gray-600, #52525b);
+    text-align: center;
+}
+
+.dark .fi-fo-rich-editor .asignua-rte-figure[data-asignua-caption]::after {
+    color: var(--gray-400, #a1a1aa);
+}
+
+.fi-fo-rich-editor .asignua-rte-align-left {
+    float: left;
+    max-width: 50%;
+    margin: 0.25rem 1.5rem 1rem 0;
+}
+
+.fi-fo-rich-editor .asignua-rte-align-right {
+    float: right;
+    max-width: 50%;
+    margin: 0.25rem 0 1rem 1.5rem;
+}
+
+.fi-fo-rich-editor .asignua-rte-align-center {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
 }

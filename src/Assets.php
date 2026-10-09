@@ -19,7 +19,7 @@ final class Assets
 {
     public const string PACKAGE = 'asignua/filament-rich-editor-toolkit';
 
-    public const array MODULES = ['paste-clean', 'custom-attributes', 'embed', 'fullscreen', 'character-count', 'source-code'];
+    public const array MODULES = ['paste-clean', 'custom-attributes', 'embed', 'fullscreen', 'character-count', 'source-code', 'image-properties'];
 
     /**
      * The stylesheet of the fullscreen overlay and the counter. The two JS modules link it

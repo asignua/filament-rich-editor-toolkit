@@ -1,0 +1,63 @@
+/*
+ * Optional front-end styles for ImagePropertiesPlugin (asignua/filament-rich-editor-toolkit).
+ *
+ * An image with a caption or an alignment is stored as
+ *
+ *     <span class="asignua-rte-figure asignua-rte-align-center"><img ...><span class="asignua-rte-caption">Text</span></span>
+ *
+ * Most sites style these classes themselves; this file is a starting point, not a requirement.
+ * Publish it with `php artisan vendor:publish --tag=filament-rich-editor-toolkit-front-css`
+ * and link it, or copy the rules. Tailwind: the same in `@layer components`.
+ *
+ * Left and right are floats (the text wraps); clear them where a section must start below, e.g.
+ * `.prose::after { content: ""; display: table; clear: both; }`.
+ */
+
+.asignua-rte-figure {
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: top;
+}
+
+.asignua-rte-figure > img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.asignua-rte-caption {
+    display: block;
+    margin-top: 0.375rem;
+    font-size: 0.875em;
+    line-height: 1.4;
+    color: #52525b;
+    text-align: center;
+}
+
+.asignua-rte-align-left {
+    float: left;
+    max-width: 50%;
+    margin: 0.25rem 1.5rem 1rem 0;
+}
+
+.asignua-rte-align-right {
+    float: right;
+    max-width: 50%;
+    margin: 0.25rem 0 1rem 1.5rem;
+}
+
+.asignua-rte-align-center {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
+}
+
+@media (max-width: 40rem) {
+    .asignua-rte-align-left,
+    .asignua-rte-align-right {
+        float: none;
+        max-width: 100%;
+        margin-inline: 0;
+    }
+}

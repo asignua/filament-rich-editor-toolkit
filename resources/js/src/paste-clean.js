@@ -599,7 +599,8 @@ const BLOCK_TOKEN = /\uE000asignua-custom-block-(\d+)\uE001/
 const INLINE_PROTECTED = new Set(['img', 'span'])
 
 const PROTECTED_BLOCKS = 'div[data-type="customBlock"]'
-const PROTECTED_EDITOR_NODES = 'iframe, pre, img, span[data-type="mention"], span[data-type="mergeTag"]'
+// `span.asignua-rte-figure` is ImagePropertiesPlugin's wrapper of a captioned / aligned image.
+const PROTECTED_EDITOR_NODES = 'iframe, pre, img, span[data-type="mention"], span[data-type="mergeTag"], span.asignua-rte-figure'
 
 const extractCustomBlocks = (body, doc, existingContent) => {
     const saved = []
@@ -899,6 +900,13 @@ export const cleanPastedHtml = (html, options = {}) => {
     }
 
     rebuildWordLists(body, doc)
+
+    // A paste is not "existing content": the wrapper of a captioned image is unwrapped below, and
+    // its caption would be left behind as a loose line of text. The image keeps its `data-id`, the
+    // caption and the alignment are set again in the dialog.
+    for (const caption of Array.from(body.querySelectorAll('.asignua-rte-caption'))) {
+        caption.remove()
+    }
 
     for (const image of Array.from(body.querySelectorAll('img'))) {
         const id = (image.getAttribute('data-id') || '').trim()

@@ -59,6 +59,9 @@ class RichEditorToolkitServiceProvider extends PackageServiceProvider
 
         if ($this->app->runningInConsole()) {
             $this->publishes([__DIR__.'/../resources/lang' => $this->app->langPath('vendor/rich-editor-toolkit')], 'filament-rich-editor-toolkit-translations');
+
+            // Optional front-end styles of ImagePropertiesPlugin's alignment and caption classes.
+            $this->publishes([__DIR__.'/../resources/css/image-properties.css' => public_path('vendor/filament-rich-editor-toolkit/image-properties.css')], 'filament-rich-editor-toolkit-front-css');
         }
 
         // Published by `php artisan filament:assets`; never printed on its own. The editor

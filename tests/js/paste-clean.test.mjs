@@ -819,3 +819,21 @@ test('clean format: an open end deeper than the cleaned edge node is clamped to 
     assert.equal(slice.openEnd, 1)
     assert.doesNotThrow(() => pmSchema.nodes.doc.create(null, [para('a')]).replace(1, 1, slice))
 })
+
+test('existingContent: the wrapper of a captioned image survives "Clear formatting" untouched', () => {
+    const wrapper =
+        '<span class="asignua-rte-figure asignua-rte-align-center"><img src="https://cdn.other.test/a.png" alt="A"><span class="asignua-rte-caption">Caption</span></span>'
+    const out = clean(`<p>${wrapper}</p>`, BUTTON)
+
+    assert.equal(countOf(out, 'p > span.asignua-rte-figure.asignua-rte-align-center > img[alt="A"]'), 1)
+    assert.equal(countOf(out, 'span.asignua-rte-figure > span.asignua-rte-caption'), 1)
+    assert.equal(clean(out, BUTTON), out, 'and the pass is idempotent')
+})
+
+test('paste: the caption of a pasted captioned image does not become loose text', () => {
+    const out = clean(
+        `<p>Before <span class="asignua-rte-figure"><img src="${ORIGIN}/storage/a.png" data-id="k1"><span class="asignua-rte-caption">Caption</span></span></p>`,
+    )
+
+    assert.ok(!out.includes('Caption'))
+})

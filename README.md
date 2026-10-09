@@ -9,7 +9,7 @@
 
 <img class="filament-hidden" src="https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.0.0/art/cover.jpg" alt="Filament Rich Editor Toolkit">
 
-Eight free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
+Nine free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
 reporting in Filament's GitHub Help:
 
 | Plugin | Fixes |
@@ -18,6 +18,7 @@ reporting in Filament's GitHub Help:
 | `CustomAttributesPlugin` | `class`, `id`, `style` and `data-*` written in the source view are silently stripped, in the browser **and** on the server. |
 | `EmbedPlugin` | `<iframe>` / video embeds are removed by the schema and the sanitizer. |
 | `ImageUrlPlugin` | No way to insert an image that lives on another site. |
+| `ImagePropertiesPlugin` | No caption, no alignment, and no way to mark an image as decorative (`alt=""`) ([#8455](https://github.com/filamentphp/filament/discussions/8455), [#16860](https://github.com/filamentphp/filament/issues/16860), [#20296](https://github.com/filamentphp/filament/discussions/20296)). |
 | `FullscreenPlugin` | No fullscreen mode for long content. |
 | `SourceCodePlugin` | No HTML source view ([#17718](https://github.com/filamentphp/filament/discussions/17718), [#19141](https://github.com/filamentphp/filament/discussions/19141)). |
 | `CharacterCountPlugin` + `RichTextLength` | No counter; limits that count HTML tags, or only characters, not the text the reader sees. |
@@ -73,6 +74,7 @@ php artisan vendor:publish --tag=filament-rich-editor-toolkit-translations
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
+use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
@@ -84,6 +86,7 @@ RichEditor::make('body')
         CustomAttributesPlugin::make(),
         EmbedPlugin::make(),
         ImageUrlPlugin::make(),
+        ImagePropertiesPlugin::make(),
         FullscreenPlugin::make(),
         SourceCodePlugin::make(),
     ])
@@ -91,12 +94,12 @@ RichEditor::make('body')
     ->toolbarButtons([
         ['bold', 'italic', 'link', 'cleanFormat'],
         ['h2', 'h3', 'bulletList', 'orderedList'],
-        ['embed', 'imageUrl', 'sourceCode', 'fullscreen'],
+        ['embed', 'imageUrl', 'imageProperties', 'sourceCode', 'fullscreen'],
     ]);
 ```
 
 A toolbar button is shown only when it is listed in `toolbarButtons()` (`cleanFormat`, `embed`, `imageUrl`,
-`sourceCode`, `fullscreen`); an unknown name makes Filament throw, so list only the plugins you installed.
+`imageProperties`, `sourceCode`, `fullscreen`); an unknown name makes Filament throw, so list only the plugins you installed.
 
 ### PasteCleanPlugin
 
@@ -208,6 +211,60 @@ Inserts an `<img>` that is loaded from the other site, not copied. Only absolute
 `ImageUrlPlugin::make()->hosts(['cdn.example.com'])` restricts what the **dialog** accepts. It is not a content filter:
 an `<img>` typed in the source view or pasted is not checked against it. `http://` is accepted (mixed content on an
 https site).
+
+### ImagePropertiesPlugin
+
+Alt text, a caption and an alignment for an image, from a dialog. List `imageProperties` in `toolbarButtons()`: the
+button is enabled while an image is selected (click an image first) and opens a dialog with **Alternative text**,
+**Decorative image**, **Caption** and **Alignment** (default, left, center, right).
+
+**What Filament already does, and this does not repeat.** The stock "Attach files" dialog has an alt field, and
+`->resizableImages()` gives width and height. What it cannot do: an *empty* `alt=""` (an empty field means "no alt", and the
+server-side image node drops an empty one, so a screen reader reads the file name instead), a caption, and alignment. The plugin extends the
+existing `image` node; `data-id` (the attachment key), resizing, `ImageUrlPlugin` and the `class`/`style` that
+`CustomAttributesPlugin` keeps on the `<img>` work as before.
+
+**Markup.** An image without a caption or alignment stays a bare `<img>`, byte for byte (no change to existing
+content). With either it becomes
+
+```html
+<p><span class="asignua-rte-figure asignua-rte-align-center"><img src="..." alt="..."><span class="asignua-rte-caption">Caption text</span></span></p>
+```
+
+It is a `<span>`, not `<figure>`/`<figcaption>`, on purpose: Filament's image is an **inline** node (the editor stores
+it as `<p><img></p>`), and a `<figure>` inside a `<p>` is invalid HTML; browsers close the paragraph at `<figure>` and
+leave two empty ones. A `<figure>` with one `<img>` and an optional `<figcaption>` typed in the source view or pasted
+is **read** (alignment from an `asignua-rte-align-*` class or `data-align`) and written back in the span form; a
+`<figure>` around anything else is left alone. A caption is plain text: markup in a `<figcaption>` is flattened, and
+the text is escaped on output.
+
+**Put the button on the image.** Filament shows a floating toolbar per node type; `image` is one of them:
+
+```php
+RichEditor::make('body')
+    ->plugins([ImagePropertiesPlugin::make()])
+    ->floatingToolbars(fn (RichEditor $component): array => [
+        ...$component->getDefaultFloatingToolbars(), // keep the grid and table toolbars
+        'image' => ['imageProperties'],
+    ]);
+```
+
+**Front end.** The plugin has a server half, so it is in `RichEditorToolkit::plugins()` / `renderer()` (add it to your
+own renderer the same way). The alignment classes need CSS; most sites style them themselves. A tiny optional
+stylesheet (centered block, left/right floats that stack on narrow screens, a small caption) ships with the package:
+
+```bash
+php artisan vendor:publish --tag=filament-rich-editor-toolkit-front-css
+# -> public/vendor/filament-rich-editor-toolkit/image-properties.css
+```
+
+**Alt text guidance.** The alt text replaces the picture for someone who cannot see it, so describe what it *says*
+here, not what it *is* ("Chart: applications doubled between 2023 and 2025", not "image of a chart"). Leave out
+"image of"; keep it to a sentence; if the picture is repeated in the caption or the text around it, a short alt is
+enough. A picture that carries no information (a divider, a flourish) is **Decorative image**: the plugin stores
+`alt=""`, which screen readers skip. A *missing* `alt` is the worst case (many readers announce the file name), so
+decide for every image: describe it, or mark it decorative. The sanitizer writes an empty attribute as a bare `alt`,
+which HTML reads as `alt=""`.
 
 ### FullscreenPlugin
 
@@ -343,7 +400,7 @@ $renderer = RichContentRenderer::make($post->body)
 {!! RichEditorToolkit::toHtml($renderer) !!}
 ```
 
-This adds `CustomAttributesPlugin` and `EmbedPlugin` and sanitizes with the toolkit's **own** sanitizer: a copy of
+This adds `CustomAttributesPlugin`, `EmbedPlugin` and `ImagePropertiesPlugin` and sanitizes with the toolkit's **own** sanitizer: a copy of
 Filament's config plus your attribute allow-list and, when `EmbedPlugin` is attached, `<iframe>` whose `src` passes the
 embed allow-list. Filament's shared sanitizer is never changed, so `TextColumn::html()`, `TextEntry::html()`,
 notifications and the Markdown editor keep Filament's defaults. A renderer's own `toHtml()` uses that shared sanitizer,
@@ -358,7 +415,7 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
 
 ## Gotchas
 
-- **Both halves, always.** `CustomAttributesPlugin` and `EmbedPlugin` must be in the editor *and* in the renderer. Miss
+- **Both halves, always.** `CustomAttributesPlugin`, `EmbedPlugin` and `ImagePropertiesPlugin` must be in the editor *and* in the renderer. Miss
   the renderer and the data sits in the database and vanishes on the page.
 - **Publish the assets.** A missing `filament:assets` means a 404 for the module URL and a `console.error` from
   Filament's loader. Nothing else fails, the plugin is just absent.
@@ -369,13 +426,18 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
 - **The sanitizer is the toolkit's own.** Allowances apply only to `RichEditorToolkit::renderer()` and
   `RichEditorToolkit::toHtml()`; a plain `RichContentRenderer::toHtml()` and every `->html()` column still drop
   `<iframe>` and the extra attributes.
-- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl`, `fullscreen`, `sourceCode` only when the matching plugin is registered.
+- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl`, `imageProperties`, `fullscreen`, `sourceCode` only when the matching plugin is registered.
 - **Fullscreen is a fixed overlay, not the top layer.** The top layer would paint above Filament's modals and hide the
   dialogs opened from the toolbar. The price: an ancestor with `transform`, `filter` or `contain` makes `position: fixed`
   fill that ancestor instead of the screen. `overflow` on a section, tab or repeater does not clip it.
 - **The source view is not a raw editor.** What you type is parsed through the schema, like a paste: unknown markup
   disappears (with a notice), and the textarea is rebuilt from the editor on the next visit. Use `CustomAttributesPlugin`
   for `class`/`id`/`style`/`data-*`.
+- **Image properties live on the image.** The caption and the alignment are node attributes: the wrapper `<span>` is
+  built on output, and its own `class`/`style`/`data-*` are dropped when it is read back (the `<img>`'s are kept).
+  Pasting a captioned image inside the editor keeps the image but not the caption (set it again in the dialog).
+  The `imageProperties` button is disabled until an image is selected. `ImageUrlPlugin` images are fine.
+  `left`/`right` are floats: clear them below a section that must start on its own line.
 - **Counter and rule are separate.** The counter does not validate and the rule does not draw anything; `textLength()`
   adds both. A browser can be bypassed, so keep the rule.
 - **Strict paste is about pastes.** It does not unformat existing content and does not stop Ctrl+B; the `cleanFormat`

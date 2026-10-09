@@ -6,6 +6,8 @@
 // Nothing here ever assigns HTML to a live element: strings go into a detached document through
 // the parser, and the output of the printer is a string that ends up as a textarea's `value`.
 
+import { ALIGN_CLASS_PREFIX, CAPTION_CLASS, FIGURE_CLASS, alignOf, cleanCaption } from './image-properties.js'
+
 const VOID = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
 
 // Elements that start on their own line. Everything else is inline and is printed as it came.
@@ -175,8 +177,61 @@ const build = (domNode) => {
 
 const attrless = (el) => Object.keys(el.attrs).length === 0
 
+const textOf = (kids) => kids.map((kid) => (kid.text !== undefined ? kid.text : textOf(kid.kids))).join('')
+
+const classTokens = (el) => (el.attrs.class || '').split(WS).filter(Boolean)
+
+/**
+ * ImagePropertiesPlugin: a <figure> (typed or pasted) and the span the editor writes for it are the
+ * SAME image, so both are reduced to the <img> plus what the wrapper said (alignment, caption),
+ * otherwise a typed <figure> would always be reported as "not supported". What the editor really
+ * drops is kept as markers so that it still counts: attributes or classes of the wrapper that are not
+ * the alignment, and markup inside the caption (a caption is plain text).
+ */
+const reduceImageWrapper = (el) => {
+    const isWrapper = el.name === 'figure' || (el.name === 'span' && classTokens(el).includes(FIGURE_CLASS))
+
+    if (!isWrapper) {
+        return null
+    }
+
+    const meaningful = el.kids.filter((kid) => !isSpace(kid))
+    const images = meaningful.filter((kid) => kid.name === 'img')
+    const rest = meaningful.filter((kid) => kid.name !== 'img')
+    const isCaption = (kid) => kid.name === 'figcaption' || (kid.name === 'span' && classTokens(kid).includes(CAPTION_CLASS))
+
+    if (images.length !== 1 || rest.length > 1 || !rest.every(isCaption)) {
+        return null
+    }
+
+    const wrapper = { class: el.attrs.class || '', 'data-align': el.attrs['data-align'] }
+    const align = alignOf({ getAttribute: (name) => wrapper[name] ?? null })
+    const caption = rest.length === 1 ? cleanCaption(textOf(rest[0].kids)) : null
+    const leftover = [
+        ...classTokens(el).filter((token) => token !== FIGURE_CLASS && !token.startsWith(ALIGN_CLASS_PREFIX)),
+        ...Object.keys(el.attrs).filter((name) => name !== 'class' && name !== 'data-align'),
+        ...(rest.length === 1 && rest[0].kids.some((kid) => kid.name) ? ['caption-markup'] : []),
+    ]
+
+    return {
+        ...images[0],
+        attrs: {
+            ...images[0].attrs,
+            ...(align ? { 'data-asignua-align': align } : {}),
+            ...(caption ? { 'data-asignua-caption': caption } : {}),
+            ...(leftover.length ? { 'data-asignua-dropped': leftover.join(' ') } : {}),
+        },
+    }
+}
+
 const fix = (el) => {
     el.kids = el.kids.flatMap((kid) => (kid.name ? fix(kid) : [kid]))
+
+    const image = reduceImageWrapper(el)
+
+    if (image) {
+        return [image]
+    }
 
     const meaningful = el.kids.filter((kid) => !isSpace(kid))
 

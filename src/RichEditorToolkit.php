@@ -7,6 +7,7 @@ namespace Asignua\RichEditorToolkit;
 use Asignua\RichEditorToolkit\Extensions\CustomAttributes;
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
+use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
 use Asignua\RichEditorToolkit\Support\EmbedSrcSanitizer;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
@@ -28,7 +29,8 @@ use Symfony\Component\HtmlSanitizer\HtmlSanitizerInterface;
  * of which has a tiptap schema to filter iframes by host. The toolkit sanitizes with its own
  * instance, built from a copy of Filament's config ({@see self::sanitizer()}).
  *
- * Only the plugins that have a server half are added here. {@see Plugins\PasteCleanPlugin}
+ * Only the plugins that have a server half are added here: custom attributes, embeds, and image
+ * properties (`alt=""`, the caption and the alignment of an image). {@see Plugins\PasteCleanPlugin}
  * has none on purpose: it cleans once, at paste time, and a second pass at render time would
  * strip the very `class`/`style` that CustomAttributesPlugin exists to keep.
  */
@@ -68,7 +70,7 @@ final class RichEditorToolkit
      * @param list<string>|null $attributes
      * @param list<string>|null $types
      *
-     * @return list<CustomAttributesPlugin|EmbedPlugin>
+     * @return list<CustomAttributesPlugin|EmbedPlugin|ImagePropertiesPlugin>
      */
     public static function plugins(?array $attributes = null, ?array $types = null): array
     {
@@ -85,6 +87,7 @@ final class RichEditorToolkit
         return [
             $customAttributes,
             EmbedPlugin::make(),
+            ImagePropertiesPlugin::make(),
         ];
     }
 

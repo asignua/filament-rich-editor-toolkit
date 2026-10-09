@@ -7,6 +7,7 @@ namespace Workbench\App\Livewire;
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
+use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
@@ -45,12 +46,17 @@ class DemoForm extends Component implements HasActions, HasForms
                         CustomAttributesPlugin::make(),
                         EmbedPlugin::make(),
                         ImageUrlPlugin::make(),
+                        ImagePropertiesPlugin::make(),
                         PasteCleanPlugin::make()->strict(),
                         FullscreenPlugin::make(),
                         SourceCodePlugin::make(),
                     ])
+                    ->floatingToolbars(fn (RichEditor $component): array => [
+                        ...$component->getDefaultFloatingToolbars(),
+                        'image' => ['imageProperties'],
+                    ])
                     ->textLength(max: 500, maxWords: 80) // @phpstan-ignore method.notFound (macro)
-                    ->toolbarButtons([['bold', 'link', 'h2', 'bulletList', 'table', 'cleanFormat', 'embed', 'imageUrl', 'sourceCode', 'fullscreen']]),
+                    ->toolbarButtons([['bold', 'link', 'h2', 'bulletList', 'table', 'cleanFormat', 'embed', 'imageUrl', 'imageProperties', 'sourceCode', 'fullscreen']]),
             ])
             ->statePath('data');
     }
