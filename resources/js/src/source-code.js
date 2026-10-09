@@ -13,10 +13,13 @@
 // WHEN IT SYNCS. The textarea is pushed into the editor (a) 400 ms after the last keystroke,
 // (b) on `change`/`focusout` (a click on Save blurs it first, so the value is in the state before
 // the click is handled), (c) in a capturing `submit` listener on the enclosing <form>, (d) when
-// leaving source mode, (e) synchronously on any keydown with Ctrl/Cmd held (Filament's save
-// shortcut, mod+s, fires neither focusout nor submit before it reads the state), and (f) when
-// Livewire is about to send a request (its `commit` hook, best effort). So a form saved while still in source mode keeps the source. The
-// textarea itself is never rewritten while the user types; it is only replaced on the way in.
+// leaving source mode, and (e) synchronously on any keydown with Ctrl/Cmd held (Filament's save
+// shortcut, mod+s, fires neither focusout nor submit before it reads the state). So a form saved
+// while still in source mode keeps the source. There is deliberately NO Livewire `commit` hook:
+// Livewire computes the updates of a request BEFORE it runs its commit hooks, and Filament copies
+// the editor state into the form on `$nextTick`, so a flush from that hook lands too late to be sent
+// and only looks like a safety net. The textarea itself is never rewritten while the user types; it
+// is only replaced on the way in.
 //
 // THE EDITOR CHANGES UNDER THE TEXTAREA. While the source is shown, the document can still be
 // changed from outside: the server rewrites it (`saveFileAttachments` swaps the `data-id` of every
@@ -28,6 +31,16 @@
 // The editor wins: text typed in the last 400 ms that was not flushed yet is replaced too, because
 // pushing it would overwrite the newer document.
 //
+// ... EXCEPT typing that was not flushed yet (the textarea differs from the last pushed value).
+// That is the user's work and is never thrown away silently, but it cannot be pushed either: it
+// was written against the OLD document (stale `data-id`s of images the server has since
+// re-attached), and merging two HTML versions is not something a text box can do safely. So the
+// view goes STALE: the user's text stays in the box, a status message says so, and every sync is
+// suspended (the form saves the editor's document, which is the server's). Leaving source mode
+// then discards the unapplied text - the message told the user to copy it first. This is rare:
+// a save flushes first (blur, submit, Ctrl+S), so the window is typing WHILE a save request is
+// in flight.
+//
 // THE NOTICE. After leaving, the typed HTML is compared with what the editor now holds
 // (`materiallyDiffers`, see source-html.js); a difference shows a non-blocking status message
 // above the content: some markup is not supported by this editor and was removed.
@@ -38,7 +51,7 @@
 // could not leave it); the indentation is typed with spaces.
 //
 // Configuration comes from the query string of this module's URL: `css`, `indent`, and the
-// translated strings `t-label` (the textarea's aria-label) and `t-notice`.
+// translated strings `t-label` (the textarea's aria-label), `t-notice` and `t-conflict`.
 //
 // IMPORTANT: `window` and `import.meta` are read ONLY inside the default-export factory.
 
@@ -53,7 +66,7 @@ const KEEP = /asignuaToggle(SourceCode|Fullscreen)/
 /**
  * @param {Element} root the field wrapper (.fi-fo-rich-editor)
  * @param {object} editor a TipTap editor (getHTML, commands.setContent, commands.focus, isEditable)
- * @param {{doc?: Document, parseHtml: (html: string) => Document, indent?: number, label?: string, notice?: string, delay?: number}} options
+ * @param {{doc?: Document, parseHtml: (html: string) => Document, indent?: number, label?: string, notice?: string, conflict?: string, delay?: number}} options
  */
 export const createSourceView = (root, editor, options) => {
     const doc = options.doc || globalThis.document
@@ -71,24 +84,24 @@ export const createSourceView = (root, editor, options) => {
     let syncing = false
     let locked = []
     let form = null
-    let unhook = null
+    let stale = false
 
     const clearNotice = () => {
         notice?.remove()
         notice = null
     }
 
-    const showNotice = () => {
+    const showNotice = (message = options.notice) => {
         clearNotice()
 
-        if (!options.notice || !host || !main) {
+        if (!message || !host || !main) {
             return
         }
 
         notice = doc.createElement('div')
         notice.className = 'asignua-rte-source-notice'
         notice.setAttribute('role', 'status')
-        notice.textContent = options.notice
+        notice.textContent = message
         host.insertBefore(notice, main)
     }
 
@@ -115,7 +128,7 @@ export const createSourceView = (root, editor, options) => {
             timer = null
         }
 
-        if (!active || !textarea || textarea.readOnly || textarea.value === synced) {
+        if (!active || !textarea || stale || textarea.readOnly || textarea.value === synced) {
             return false
         }
 
@@ -190,14 +203,6 @@ export const createSourceView = (root, editor, options) => {
         locked = []
     }
 
-    const detach = () => {
-        if (typeof unhook === 'function') {
-            unhook()
-        }
-
-        unhook = null
-    }
-
     const api = {
         isActive: () => active,
         /** True while a sync is calling setContent, so the owner can tell it from the user typing. */
@@ -215,6 +220,14 @@ export const createSourceView = (root, editor, options) => {
             if (timer !== null) {
                 clearTimeout(timer)
                 timer = null
+            }
+
+            // Typing that was never pushed: keep it, say so, suspend the syncs (see the header comment).
+            if (stale || textarea.value !== synced) {
+                stale = true
+                showNotice(options.conflict)
+
+                return false
             }
 
             const next = prettyHtml(editor.getHTML(), { indent: options.indent, parseHtml: options.parseHtml })
@@ -256,6 +269,7 @@ export const createSourceView = (root, editor, options) => {
 
             clearNotice()
             active = true
+            stale = false
             initial = prettyHtml(editor.getHTML(), { indent: options.indent, parseHtml: options.parseHtml })
             synced = initial
 
@@ -274,7 +288,6 @@ export const createSourceView = (root, editor, options) => {
             textarea.addEventListener('change', flush)
             textarea.addEventListener('focusout', flush)
             textarea.addEventListener('keydown', onKeydown)
-            unhook = options.onCommit ? options.onCommit(flush) || null : null
 
             form = root.closest('form')
             form?.addEventListener('submit', flush, true)
@@ -296,15 +309,22 @@ export const createSourceView = (root, editor, options) => {
             active = false
 
             const typed = textarea.value
-            const changed = typed !== initial
+            const discarded = stale
+            const changed = typed !== initial && !discarded
+
+            stale = false
 
             form?.removeEventListener('submit', flush, true)
             form = null
-            detach()
             textarea.remove()
             textarea = null
             root.classList.remove(ACTIVE_CLASS)
             unlockToolbar()
+
+            // The conflict message was about the box that is gone now.
+            if (discarded) {
+                clearNotice()
+            }
 
             if (changed && materiallyDiffers(typed, editor.getHTML(), options.parseHtml)) {
                 showNotice()
@@ -327,7 +347,6 @@ export const createSourceView = (root, editor, options) => {
                 // The editor is going away; the state was already synced by the last flush.
                 active = false
                 form?.removeEventListener('submit', flush, true)
-                detach()
                 textarea?.remove()
                 textarea = null
                 root.classList.remove(ACTIVE_CLASS)
@@ -339,20 +358,6 @@ export const createSourceView = (root, editor, options) => {
     }
 
     return api
-}
-
-/**
- * Runs `callback` just before Livewire sends a request (its `commit` hook), when Livewire is on the
- * page. Best effort: returns a function that removes the hook, or null.
- */
-const livewireCommitHook = (callback) => {
-    try {
-        const off = window.Livewire?.hook?.('commit', () => callback())
-
-        return typeof off === 'function' ? off : null
-    } catch {
-        return null
-    }
 }
 
 export default () => {
@@ -375,10 +380,10 @@ export default () => {
             if (root) {
                 view = createSourceView(root, this.editor, {
                     parseHtml,
-                    onCommit: livewireCommitHook,
                     indent,
                     label: params.get('t-label') || undefined,
                     notice: params.get('t-notice') || undefined,
+                    conflict: params.get('t-conflict') || undefined,
                 })
             }
         },

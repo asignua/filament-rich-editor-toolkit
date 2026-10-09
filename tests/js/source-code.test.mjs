@@ -503,8 +503,8 @@ test('the stale-id scenario without refresh is the bug: a flush overwrites the n
     assert.equal(editor.getHTML(), '<p>id old!</p>')
 })
 
-test('a pending (unflushed) edit is dropped by a change from outside: the editor wins', async () => {
-    const { editor, view, doc, window } = setup('<p>a</p>')
+test('unflushed typing survives a change from outside: kept, flagged, never pushed over the new document', async () => {
+    const { editor, view, doc, window } = setup('<p>a</p>', { conflict: 'CONFLICT' })
 
     view.enter()
 
@@ -513,12 +513,63 @@ test('a pending (unflushed) edit is dropped by a change from outside: the editor
     textarea.value = '<p>typed a moment ago</p>'
     textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
     changeFromOutside(editor, '<p>from the server</p>')
-    view.refresh()
+
+    assert.equal(view.refresh(), false)
     await new Promise((resolve) => setTimeout(resolve, 30))
 
-    assert.equal(textarea.value, '<p>from the server</p>')
+    assert.equal(textarea.value, '<p>typed a moment ago</p>', 'the user text is kept')
     assert.equal(editor.getHTML(), '<p>from the server</p>')
     assert.equal(editor.calls.length, 0, 'the debounced push was cancelled')
+
+    const notice = doc.querySelector('.asignua-rte-source-notice')
+
+    assert.equal(notice.textContent, 'CONFLICT')
+    assert.equal(notice.getAttribute('role'), 'status')
+
+    // Every route that used to sync is suspended while stale: blur, change, submit, Ctrl+S.
+    textarea.dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }))
+    textarea.dispatchEvent(new window.Event('change', { bubbles: true }))
+    textarea.dispatchEvent(keydown(window, { key: 's', ctrlKey: true }))
+    textarea.value = '<p>typed more</p>'
+    textarea.dispatchEvent(new window.Event('input', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    assert.equal(editor.calls.length, 0)
+    assert.equal(editor.getHTML(), '<p>from the server</p>')
+})
+
+test('leaving a stale source view discards the unapplied text (the editor keeps the server document) and clears the message', () => {
+    const { editor, view, doc } = setup('<p>a</p>', { conflict: 'CONFLICT' })
+
+    view.enter()
+    doc.querySelector('textarea').value = '<p>old ids</p>'
+    changeFromOutside(editor, '<p>from the server</p>')
+    view.refresh()
+
+    view.exit()
+
+    assert.equal(editor.getHTML(), '<p>from the server</p>')
+    assert.equal(editor.calls.length, 0)
+    assert.equal(doc.querySelector('.asignua-rte-source-notice'), null)
+    assert.equal(doc.querySelector('textarea'), null)
+})
+
+test('entering again after a conflict starts clean and syncs normally', () => {
+    const { editor, view, doc } = setup('<p>a</p>', { conflict: 'CONFLICT' })
+
+    view.enter()
+    doc.querySelector('textarea').value = '<p>x</p>'
+    changeFromOutside(editor, '<p>b</p>')
+    view.refresh()
+    view.exit()
+    view.enter()
+
+    const textarea = doc.querySelector('textarea')
+
+    assert.equal(textarea.value, '<p>b</p>')
+    textarea.value = '<p>c</p>'
+    view.exit()
+    assert.equal(editor.getHTML(), '<p>c</p>')
 })
 
 test('refresh does nothing when the editor already shows the textarea, or when the source is not open', () => {
@@ -614,38 +665,6 @@ test('any chord with a modifier flushes; a plain key and a bare modifier press d
 
     textarea.dispatchEvent(keydown(window, { key: 'Enter', ctrlKey: true }))
     assert.equal(editor.calls.length, 1)
-})
-
-test('the Livewire commit hook flushes too, and is removed on leaving', () => {
-    const hooks = []
-    const removed = []
-    const { editor, view, doc } = setup('<p>a</p>', {
-        onCommit: (callback) => {
-            hooks.push(callback)
-
-            return () => removed.push(callback)
-        },
-    })
-
-    view.enter()
-    assert.equal(hooks.length, 1)
-
-    doc.querySelector('textarea').value = '<p>before the request</p>'
-    hooks[0]()
-    assert.equal(editor.getHTML(), '<p>before the request</p>')
-
-    view.exit()
-    assert.deepEqual(removed, hooks)
-})
-
-test('destroying while in source mode also removes the Livewire hook', () => {
-    const removed = []
-    const { view } = setup('<p>a</p>', { onCommit: () => () => removed.push(1) })
-
-    view.enter()
-    view.destroy()
-
-    assert.deepEqual(removed, [1])
 })
 
 // --- the extension wiring ---------------------------------------------------------------------------------

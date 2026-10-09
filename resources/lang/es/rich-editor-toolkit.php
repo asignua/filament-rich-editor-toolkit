@@ -28,6 +28,7 @@ return [
     'source_code' => 'Código fuente',
     'source_code_label' => 'Código fuente HTML',
     'source_code_unsupported' => 'Parte del marcado no es compatible con este editor y se ha eliminado.',
+    'source_code_conflict' => 'El contenido se actualizó mientras editaba el código fuente. Los cambios de este cuadro no se han aplicado y se descartarán al salir del modo código; cópielos antes si los necesita.',
     'image_properties' => 'Propiedades de la imagen',
     'image_properties_alt' => 'Texto alternativo',
     'image_properties_alt_hint' => 'Describa lo que muestra la imagen, como se lo explicaría a alguien que no puede verla. Déjelo vacío solo si marca la imagen como decorativa.',

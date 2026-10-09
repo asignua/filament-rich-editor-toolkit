@@ -126,6 +126,39 @@ test('a modal that CONTAINS the editor does not block Esc', () => {
     assert.equal(fullscreen.isActive(), false)
 })
 
+test('the Esc that leaves fullscreen does not reach the window, where a Filament modal listens for it', () => {
+    const window = page()
+    const root = window.document.getElementById('root')
+    const fullscreen = createFullscreen(root, { win: window, doc: window.document })
+    const reached = []
+
+    // Filament: x-on:keydown.window.escape on the modal, i.e. a bubbling listener on `window`.
+    window.addEventListener('keydown', (event) => reached.push(event.key))
+
+    const press = () =>
+        root.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    // Not in fullscreen: the key is not ours, the modal gets it.
+    press()
+    assert.deepEqual(reached, ['Escape'])
+
+    fullscreen.enter()
+    press()
+    assert.equal(fullscreen.isActive(), false)
+    assert.deepEqual(reached, ['Escape'], 'consumed by leaving fullscreen: the modal stays open')
+
+    // The next Esc is the modal's again.
+    press()
+    assert.deepEqual(reached, ['Escape', 'Escape'])
+
+    // When we do not take the key (an open dropdown owns it), it is not swallowed either.
+    fullscreen.enter()
+    root.querySelector('.fi-fo-rich-editor-toolbar').innerHTML = '<button aria-expanded="true"></button>'
+    press()
+    assert.equal(fullscreen.isActive(), true)
+    assert.equal(reached.length, 3)
+})
+
 test('exit puts the page scroll back when it moved', () => {
     const window = page()
     const fullscreen = createFullscreen(window.document.getElementById('root'), { win: window, doc: window.document })

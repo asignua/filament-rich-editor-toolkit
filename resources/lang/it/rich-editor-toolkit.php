@@ -28,6 +28,7 @@ return [
     'source_code' => 'Sorgente',
     'source_code_label' => 'Sorgente HTML',
     'source_code_unsupported' => 'Una parte del markup non è supportata da questo editor ed è stata rimossa.',
+    'source_code_conflict' => 'Il contenuto è stato aggiornato mentre modificavi il sorgente. Le modifiche in questo riquadro non sono applicate e verranno scartate uscendo dalla modalità sorgente; copiale prima se ti servono.',
     'image_properties' => 'Proprietà dell\'immagine',
     'image_properties_alt' => 'Testo alternativo',
     'image_properties_alt_hint' => 'Descrivi ciò che mostra l\'immagine, come faresti con chi non può vederla. Lascialo vuoto solo se contrassegni l\'immagine come decorativa.',

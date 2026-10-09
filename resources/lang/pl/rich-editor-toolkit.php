@@ -28,6 +28,7 @@ return [
     'source_code' => 'Źródło',
     'source_code_label' => 'Kod źródłowy HTML',
     'source_code_unsupported' => 'Część znaczników nie jest obsługiwana przez ten edytor i została usunięta.',
+    'source_code_conflict' => 'Treść została zaktualizowana, gdy edytowałeś źródło. Twoje zmiany w tym polu nie zostały zastosowane i zostaną odrzucone po wyjściu z trybu źródła; w razie potrzeby najpierw je skopiuj.',
     'image_properties' => 'Właściwości obrazu',
     'image_properties_alt' => 'Tekst alternatywny',
     'image_properties_alt_hint' => 'Opisz, co przedstawia obraz, tak jak opisałbyś to komuś, kto go nie widzi. Pozostaw puste tylko wtedy, gdy oznaczysz obraz jako dekoracyjny.',

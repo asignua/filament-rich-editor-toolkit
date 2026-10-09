@@ -262,6 +262,26 @@ class PasteImagesTest extends TestCase
         $this->assertArrayHasKey('dataUrl', $plugin->fetchRemoteImage(self::URL, $other), 'another field still has its own room');
     }
 
+    public function test_a_refused_request_does_not_burn_the_other_bucket(): void
+    {
+        config()->set('rich-editor-toolkit.paste_clean.remote_image_rate_limit', 3);
+        config()->set('rich-editor-toolkit.paste_clean.remote_image_rate_limit_per_field', 1);
+        Http::fake(['*' => Http::response(self::PNG)]);
+        $plugin = PasteCleanPlugin::make()->uploadImages();
+        $first = $this->editor();
+
+        $this->assertArrayHasKey('dataUrl', $plugin->fetchRemoteImage(self::URL, $first));
+
+        // Refused by the field bucket: none of these may count against the viewer's total.
+        for ($i = 0; $i < 5; $i++) {
+            $this->assertSame(['error' => 'rate'], $plugin->fetchRemoteImage(self::URL, $first));
+        }
+
+        $this->assertArrayHasKey('dataUrl', $plugin->fetchRemoteImage(self::URL, $this->contained(RichEditor::make('b')->fileAttachments(true))));
+        $this->assertArrayHasKey('dataUrl', $plugin->fetchRemoteImage(self::URL, $this->contained(RichEditor::make('c')->fileAttachments(true))));
+        $this->assertSame(['error' => 'rate'], $plugin->fetchRemoteImage(self::URL, $this->contained(RichEditor::make('d')->fileAttachments(true))), 'the viewer total is now used up');
+    }
+
     // --- the module ------------------------------------------------------------------------------------
 
     public function test_the_php_and_js_agree_on_the_names_and_the_host_rule(): void

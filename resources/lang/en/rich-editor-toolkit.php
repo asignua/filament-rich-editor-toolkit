@@ -28,6 +28,7 @@ return [
     'source_code' => 'Source',
     'source_code_label' => 'HTML source',
     'source_code_unsupported' => 'Some markup is not supported by this editor and was removed.',
+    'source_code_conflict' => 'The content was updated while you were editing the source. Your changes in this box are not applied and are discarded when you leave source mode; copy them first if you need them.',
     'image_properties' => 'Image properties',
     'image_properties_alt' => 'Alternative text',
     'image_properties_alt_hint' => 'Describe what the image shows, as you would to someone who cannot see it. Leave it empty only if you mark the image as decorative.',

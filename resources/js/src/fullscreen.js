@@ -16,7 +16,8 @@
 // height as `min-height`), focuses the editor. Leaving undoes all of it and restores the page
 // scroll position. Esc leaves unless something on top wants it: a Filament modal that does not
 // contain the editor, an open toolbar dropdown, or a handler that already called
-// preventDefault().
+// preventDefault(). When it does leave, it stops the event there, so that an editor inside a modal
+// does not close the modal with the same key press.
 //
 // Configuration comes from the query string of this module's URL: `css` (the UI stylesheet,
 // linked once) and `z` (an integer, sets --asignua-rte-fullscreen-z on the wrapper).
@@ -55,6 +56,11 @@ export const createFullscreen = (root, options = {}) => {
         }
 
         event.preventDefault()
+
+        // This Esc is ours: it leaves fullscreen and nothing else. A field inside a Filament modal
+        // would otherwise close the modal with it (the modal listens for Escape on `window`, one step
+        // after `document`, where this handler sits), losing the dialog's unsaved form.
+        event.stopPropagation()
         api.exit()
     }
 

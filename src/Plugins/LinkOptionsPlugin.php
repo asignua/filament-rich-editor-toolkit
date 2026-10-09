@@ -194,7 +194,7 @@ class LinkOptionsPlugin implements RichContentPlugin
 
     /**
      * The mark attributes for what the dialog sent. Tokens the dialog does not manage (anything
-     * else the link already had) are kept; `noopener noreferrer` follow the new-tab switch.
+     * else the link already had) are kept if the rel whitelist allows them; `noopener noreferrer` follow the new-tab switch.
      *
      * @param array<string, mixed> $data
      *
@@ -205,10 +205,17 @@ class LinkOptionsPlugin implements RichContentPlugin
         $newTab = (bool) ($data['newTab'] ?? false);
         $managed = [...LinkAttributes::EDITABLE, ...LinkAttributes::FOR_NEW_TAB];
 
-        $others = array_values(array_filter(
-            preg_split('/\s+/', trim(is_string($existingRel) ? $existingRel : '')) ?: [],
-            static fn (string $token): bool => $token !== '' && !in_array(strtolower($token), $managed, true),
-        ));
+        // `$existingRel` comes back from the browser (the dialog's argument), so it is not trusted: only
+        // what the rel whitelist allows is stored, and `opener` never (it undoes the new-tab protection).
+        $allowed = LinkAttributes::allowedTokens();
+
+        $others = array_values(array_unique(array_filter(
+            array_map(strtolower(...), preg_split('/\s+/', trim(is_string($existingRel) ? $existingRel : '')) ?: []),
+            static fn (string $token): bool => $token !== ''
+                && $token !== 'opener'
+                && !in_array($token, $managed, true)
+                && in_array($token, $allowed, true),
+        )));
 
         $chosen = array_values(array_intersect(LinkAttributes::EDITABLE, array_map(strval(...), (array) ($data['rel'] ?? []))));
 

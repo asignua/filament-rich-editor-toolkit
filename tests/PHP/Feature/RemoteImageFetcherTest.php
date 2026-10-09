@@ -8,6 +8,7 @@ use Asignua\RichEditorToolkit\Support\CappedSink;
 use Asignua\RichEditorToolkit\Support\RemoteImageException;
 use Asignua\RichEditorToolkit\Support\RemoteImageFetcher;
 use Asignua\RichEditorToolkit\Tests\TestCase;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -191,7 +192,7 @@ class RemoteImageFetcherTest extends TestCase
         $this->assertArrayNotHasKey(CURLOPT_MAXFILESIZE_LARGE, $options['curl']);
 
         // (Http::fake already wrote the fake body into the sink; this one write crosses the cap whatever is in there.)
-        $this->assertFalse(@fwrite($options['sink'], str_repeat('x', 4097)), 'the sink is capped at the byte limit it was built for');
+        $this->assertSame(0, fwrite($options['sink'], str_repeat('x', 4097)), 'the sink is capped at the byte limit it was built for');
     }
 
     public function test_the_connection_is_pinned_to_the_checked_address(): void
@@ -243,8 +244,9 @@ class RemoteImageFetcherTest extends TestCase
         $this->assertFalse($sink->exceeded);
         $this->assertSame(4, fwrite($sink->stream, 'ghij'), 'exactly at the cap is allowed');
 
-        // A failed write is what makes libcurl abort the transfer.
-        $this->assertFalse(@fwrite($sink->stream, 'k'));
+        // A SHORT write (0), not false: Guzzle 7's curl write callback is `return $sink->write()` and
+        // Psr7\Stream::write() throws on false, which curl ignores (the transfer would run on).
+        $this->assertSame(0, fwrite($sink->stream, 'k'));
         $this->assertTrue($sink->exceeded);
 
         rewind($sink->stream);
@@ -255,8 +257,23 @@ class RemoteImageFetcherTest extends TestCase
     {
         $sink = new CappedSink(4);
 
-        $this->assertFalse(@fwrite($sink->stream, 'abcde'));
+        $this->assertSame(0, fwrite($sink->stream, 'abcde'));
         $this->assertTrue($sink->exceeded);
+    }
+
+    public function test_the_psr7_wrapper_guzzle_puts_around_the_sink_gets_a_short_write_not_an_exception(): void
+    {
+        // Guzzle 7 does `Psr7\Utils::streamFor($sink)` and returns `$sink->write($chunk)` to libcurl as is.
+        $sink = new CappedSink(4);
+        $stream = Utils::streamFor($sink->stream);
+
+        $this->assertSame(3, $stream->write('abc'));
+        $this->assertSame(0, $stream->write('def'), 'a short write makes libcurl abort; an exception would not');
+        $this->assertTrue($sink->exceeded);
+
+        $stream->rewind();
+        $this->assertSame('abc', $stream->getContents());
+        $this->assertSame(3, $stream->getSize());
     }
 
     // --- wildcards and public suffixes (the JS twin reads the same fixture) --------------------------------

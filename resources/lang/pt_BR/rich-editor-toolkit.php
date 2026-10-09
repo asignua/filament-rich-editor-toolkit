@@ -28,6 +28,7 @@ return [
     'source_code' => 'Código-fonte',
     'source_code_label' => 'Código-fonte HTML',
     'source_code_unsupported' => 'Parte da marcação não é compatível com este editor e foi removida.',
+    'source_code_conflict' => 'O conteúdo foi atualizado enquanto você editava o código-fonte. Suas alterações nesta caixa não foram aplicadas e serão descartadas ao sair do modo código-fonte; copie-as antes, se precisar.',
     'image_properties' => 'Propriedades da imagem',
     'image_properties_alt' => 'Texto alternativo',
     'image_properties_alt_hint' => 'Descreva o que a imagem mostra, como faria para alguém que não pode vê-la. Deixe vazio apenas se marcar a imagem como decorativa.',

@@ -184,34 +184,13 @@ class ImageProperties extends ImageExtension
             return true;
         }
 
-        $images = $wrapper->getElementsByTagName('img');
+        $found = self::singleImageOf($wrapper);
 
-        if ($images->length !== 1) {
+        if ($found === null) {
             return false;
         }
 
-        /** @var DOMElement $image */
-        $image = $images->item(0);
-
-        if (!$image->hasAttribute('src') && !$image->hasAttribute('data-id')) {
-            return false;
-        }
-
-        $caption = null;
-
-        foreach ($wrapper->childNodes as $child) {
-            if (self::isBlankText($child) || $child === $image) {
-                continue;
-            }
-
-            if ($child instanceof DOMElement && $caption === null && (strtolower($child->nodeName) === 'figcaption' || self::hasClass($child, self::CAPTION_CLASS))) {
-                $caption = $child->textContent;
-
-                continue;
-            }
-
-            return false;
-        }
+        [$image, $caption] = $found;
 
         $align = self::alignOf($wrapper);
 
@@ -238,6 +217,78 @@ class ImageProperties extends ImageExtension
         $wrapper->setAttribute(self::STASH_CAPTION, self::cleanCaption($caption) ?? '');
 
         return true;
+    }
+
+    /**
+     * Is this element the CAPTION of an image wrapper, i.e. text that the editor stores as an
+     * attribute of the image and never as text? True for a `<figcaption>` / `.asignua-rte-caption`
+     * whose parent is a `<figure>` or a `span.asignua-rte-figure` that {@see self::adopt()} would
+     * accept (exactly one image plus this caption). A caption-looking element anywhere else is
+     * ordinary content. Reads only, changes nothing.
+     */
+    public static function isWrapperCaption(DOMElement $node): bool
+    {
+        if (strtolower($node->nodeName) !== 'figcaption' && !self::hasClass($node, self::CAPTION_CLASS)) {
+            return false;
+        }
+
+        $parent = $node->parentNode;
+
+        if (!$parent instanceof DOMElement) {
+            return false;
+        }
+
+        $isWrapperTag = strtolower($parent->nodeName) === 'figure'
+            || (strtolower($parent->nodeName) === 'span' && self::hasClass($parent, self::FIGURE_CLASS));
+
+        if (!$isWrapperTag) {
+            return false;
+        }
+
+        $found = self::singleImageOf($parent);
+
+        return $found !== null && $found[1] !== null && $node->textContent === $found[1];
+    }
+
+    /**
+     * The one image of a wrapper and its caption text (null when it has none), or null when the
+     * element is not a single-image wrapper: exactly one `<img>` (with a src or a data-id) and,
+     * besides it, only blank text and ONE `<figcaption>` / caption span.
+     *
+     * @return array{0: DOMElement, 1: string|null}|null
+     */
+    private static function singleImageOf(DOMElement $wrapper): ?array
+    {
+        $images = $wrapper->getElementsByTagName('img');
+
+        if ($images->length !== 1) {
+            return null;
+        }
+
+        /** @var DOMElement $image */
+        $image = $images->item(0);
+
+        if (!$image->hasAttribute('src') && !$image->hasAttribute('data-id')) {
+            return null;
+        }
+
+        $caption = null;
+
+        foreach ($wrapper->childNodes as $child) {
+            if (self::isBlankText($child) || $child === $image) {
+                continue;
+            }
+
+            if ($child instanceof DOMElement && $caption === null && (strtolower($child->nodeName) === 'figcaption' || self::hasClass($child, self::CAPTION_CLASS))) {
+                $caption = $child->textContent;
+
+                continue;
+            }
+
+            return null;
+        }
+
+        return [$image, $caption];
     }
 
     /**

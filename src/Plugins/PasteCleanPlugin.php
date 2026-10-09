@@ -308,10 +308,17 @@ class PasteCleanPlugin implements RichContentPlugin
         $perField = max(1, (int) config('rich-editor-toolkit.paste_clean.remote_image_rate_limit_per_field', 30));
         $viewer = auth()->id() ?? request()->ip() ?? 'guest';
 
-        if (!RateLimiter::attempt('asignua-rte-remote-image:'.$viewer, $perMinute, static fn (): bool => true, 60)
-            || !RateLimiter::attempt('asignua-rte-remote-image:'.$viewer.':'.$component->getStatePath(), $perField, static fn (): bool => true, 60)) {
+        $viewerKey = 'asignua-rte-remote-image:'.$viewer;
+        $fieldKey = $viewerKey.':'.$component->getStatePath();
+
+        // Check BOTH before hitting either: a refused request must not burn the allowance of the
+        // bucket that still had room (`attempt()` on the first one would count it).
+        if (RateLimiter::tooManyAttempts($viewerKey, $perMinute) || RateLimiter::tooManyAttempts($fieldKey, $perField)) {
             return ['error' => 'rate'];
         }
+
+        RateLimiter::hit($viewerKey, 60);
+        RateLimiter::hit($fieldKey, 60);
 
         $maxBytes = max(1, (int) config('rich-editor-toolkit.paste_clean.remote_image_max_kb', 5120)) * 1024;
         $fieldMaxKb = $component->getFileAttachmentsMaxSize();

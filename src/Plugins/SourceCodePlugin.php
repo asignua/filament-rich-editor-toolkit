@@ -72,6 +72,7 @@ class SourceCodePlugin implements RichContentPlugin
             'indent' => [(string) $this->getIndent()],
             't-label' => [__($prefix.'source_code_label')],
             't-notice' => [__($prefix.'source_code_unsupported')],
+            't-conflict' => [__($prefix.'source_code_conflict')],
         ])];
     }
 

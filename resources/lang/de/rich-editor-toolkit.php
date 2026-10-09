@@ -28,6 +28,7 @@ return [
     'source_code' => 'Quelltext',
     'source_code_label' => 'HTML-Quelltext',
     'source_code_unsupported' => 'Ein Teil des Markups wird von diesem Editor nicht unterstützt und wurde entfernt.',
+    'source_code_conflict' => 'Der Inhalt wurde aktualisiert, während Sie den Quelltext bearbeitet haben. Ihre Änderungen in diesem Feld sind nicht übernommen und werden beim Verlassen der Quelltextansicht verworfen; kopieren Sie sie bei Bedarf vorher.',
     'image_properties' => 'Bildeigenschaften',
     'image_properties_alt' => 'Alternativtext',
     'image_properties_alt_hint' => 'Beschreiben Sie, was das Bild zeigt, so wie Sie es jemandem erklären würden, der es nicht sehen kann. Nur leer lassen, wenn das Bild als dekorativ markiert ist.',

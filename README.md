@@ -170,8 +170,10 @@ is where you put it; otherwise the paste lands where it was made.
    `localhost`, or numeric forms such as `2130706433`).
 2. The host must match `paste_clean.remote_image_hosts` (default `['*.googleusercontent.com']`; `*.x.y` = any subdomain, never the
    bare domain; otherwise an exact name). A wildcard needs two labels after `*.` that are **not a public suffix**: `*.com`,
-   `*.co.uk` and `*.com.ua` match nothing (a best-effort list of common second-level suffixes, not the full Public Suffix
-   List; the browser applies the same rule). An empty list turns Google Docs off and leaves Word.
+   `*.co.uk`, `*.com.ua`, `*.github.io` and `*.cloudfront.net` match nothing (a best-effort list of common second-level
+   suffixes and shared-hosting domains, not the full Public Suffix List; the browser applies the same rule). Write an
+   internationalised host name in **punycode** (`xn--...`), in the list as well as in the URL: the check compares ASCII
+   names, in PHP and in the browser alike. An empty list turns Google Docs off and leaves Word.
 3. The name is resolved by the server and **every** address must be public: loopback, private, link-local (cloud metadata),
    CGNAT, documentation, multicast and the IPv4-wrapping IPv6 ranges (mapped, translated `::ffff:0:a.b.c.d`, NAT64, 6to4,
    Teredo) plus `3fff::/20` and `5f00::/16` are refused. A name that
@@ -183,8 +185,8 @@ is where you put it; otherwise the paste lands where it was made.
    pictures (Word's keep working); allow direct https egress for this feature instead.
 5. No redirects (a 3xx is a failure).
 6. Timeouts, and a byte cap on the bytes that **come off the wire** (`paste_clean.remote_image_max_kb`, 5120 by default; the
-   field's own `fileAttachmentsMaxSize()` wins when smaller): `Content-Length`, and a capped sink that fails the write
-   crossing the cap, which makes the transfer abort. The response is **never decompressed** (`Accept-Encoding: identity`,
+   field's own `fileAttachmentsMaxSize()` wins when smaller): `Content-Length`, and a capped sink that takes none of the write
+   crossing the cap (a short write, which makes libcurl abort the transfer at once, on Guzzle 7 and 8). The response is **never decompressed** (`Accept-Encoding: identity`,
    `decode_content` off) and a `Content-Encoding: gzip` answer is refused, so a few kilobytes of gzip cannot inflate into
    gigabytes.
 7. The type is decided by the file's **magic bytes** (png, jpeg, gif, webp). The remote `Content-Type` is ignored; SVG and HTML are refused.
@@ -400,7 +402,7 @@ The overlay is a fixed element at `z-index: 35`: above Filament's topbar and sid
 the link, embed and image dialogs opened from the fullscreen toolbar still open on top. Change it with
 `FullscreenPlugin::make()->zIndex(50)`, the `fullscreen.z_index` config or the `--asignua-rte-fullscreen-z` variable.
 Esc is left to a modal that does not hold the editor, to an open toolbar dropdown and to any handler that already
-called `preventDefault()`.
+called `preventDefault()`. The Esc that does leave fullscreen stops there, so an editor inside a modal does not close the modal too.
 
 ### SourceCodePlugin
 
@@ -430,11 +432,14 @@ class, style, text, a different heading level or list type) shows it. The check 
 
 **Saving while still in source mode keeps the source.** The textarea is pushed into the editor 400 ms after the last
 keystroke, on blur/`change` (clicking Save blurs it first), synchronously on any Ctrl/Cmd keydown (Filament's save
-shortcut `mod+s` fires neither blur nor submit), just before Livewire sends a request (its `commit` hook, best effort), in a
-capturing `submit` listener on the enclosing form, and when leaving. If the document changes underneath the textarea (the
-server rewrites the attachment ids when the form is saved), the textarea is rebuilt from the editor, so the stale text can
-never overwrite it; text typed in the last 400 ms and not yet pushed is replaced then. While in source mode every toolbar tool
-except `sourceCode` and `fullscreen` is disabled.
+shortcut `mod+s` fires neither blur nor submit), in a capturing `submit` listener on the enclosing form, and when leaving.
+(There is no Livewire `commit` hook: Livewire builds a request's updates before it runs the hook and Filament copies the
+editor state on the next tick, so a flush from there would be too late to be sent.) If the document changes underneath the
+textarea (the server rewrites the attachment ids when the form is saved), the textarea is rebuilt from the editor, so the
+stale text can never overwrite it. Text typed and **not yet pushed** at that moment (typing while a save is in flight) is
+not thrown away and not pushed either, since it was written against the old document: it stays in the box, a status message
+says that it is not applied and will be discarded on leaving source mode (copy it first), and all syncs are suspended until
+you leave. While in source mode every toolbar tool except `sourceCode` and `fullscreen` is disabled.
 
 `class`, `id`, `style` and the attributes you listed in `attributes` survive only if `CustomAttributesPlugin` is registered on
 the field; with it, source mode is how editors add them. **Tab is not trapped** in the textarea (a keyboard user could

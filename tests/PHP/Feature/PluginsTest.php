@@ -289,8 +289,8 @@ class PluginsTest extends TestCase
 
     public function test_strict_paste_can_tell_the_stock_link_button_from_link_options(): void
     {
-        // paste-strict.js ignores a button whose click mounts an action of a DIFFERENT name than the
-        // node/mark in its `isActive()`: "Link options" and "Image properties" borrow the active
+        // paste-strict.js ignores the toolkit's own `linkOptions` / `imageProperties` buttons (any other
+        // tool, e.g. rich-links' `richLink`, counts as what its `isActive()` names): they borrow the active
         // state of `link` / `image` (so that they light up there) but are not the Link button.
         // This pins the real markup both rules depend on.
         $this->actingAs(\Workbench\App\Models\User::factory()->create());
@@ -375,6 +375,7 @@ class PluginsTest extends TestCase
         $this->assertStringContainsString('indent=2', $url);
         $this->assertStringContainsString('t-label='.rawurlencode(__('rich-editor-toolkit::rich-editor-toolkit.source_code_label')), $url);
         $this->assertStringContainsString('t-notice='.rawurlencode(__('rich-editor-toolkit::rich-editor-toolkit.source_code_unsupported')), $url);
+        $this->assertStringContainsString('t-conflict='.rawurlencode(__('rich-editor-toolkit::rich-editor-toolkit.source_code_conflict')), $url);
 
         $this->assertStringContainsString('indent=4', SourceCodePlugin::make()->indent(4)->getTipTapJsExtensions()[0]);
 

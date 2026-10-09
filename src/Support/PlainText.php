@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Asignua\RichEditorToolkit\Support;
 
+use Asignua\RichEditorToolkit\Extensions\ImageProperties;
 use DOMDocument;
 use DOMElement;
 use DOMNode;
@@ -190,9 +191,12 @@ final class PlainText
                 continue;
             }
 
-            // An image caption is an ATTRIBUTE of the image node in the editor (see ImageProperties):
-            // the counter never sees it as text, so the rule must not count it either.
-            if ($name === 'figcaption' || in_array('asignua-rte-caption', preg_split('/\s+/', trim($child->getAttribute('class'))) ?: [], true)) {
+            // The caption of an image wrapper is an ATTRIBUTE of the image node in the editor (see
+            // ImageProperties): the counter never sees it as text, so the rule must not count it either.
+            // ONLY that: a `<p class="asignua-rte-caption">` or a `<figcaption>` around anything else is
+            // ordinary content, which the editor counts (skipping every element of that class would let
+            // a client hide any amount of text from the limit).
+            if (ImageProperties::isWrapperCaption($child)) {
                 continue;
             }
 

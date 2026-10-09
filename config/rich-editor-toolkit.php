@@ -87,7 +87,8 @@ return [
         // Hosts the SERVER may download pictures from on the editor's behalf (Google Docs serves its
         // images from lh*.googleusercontent.com, which a browser cannot read from script).
         // `*.example.com` = any subdomain (not the bare domain; a wildcard over a public suffix such as
-        // `*.co.uk` or `*.com.ua` matches nothing), otherwise an exact host name.
+        // `*.co.uk` or `*.com.ua` matches nothing), otherwise an exact host name. Write an internationalised
+        // name in punycode (`xn--...`).
         // Always https, port 443, no redirects, public addresses only. An empty list = Word only.
         'remote_image_hosts' => ['*.googleusercontent.com'],
 

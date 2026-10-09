@@ -28,6 +28,7 @@ return [
     'source_code' => 'Kaynak',
     'source_code_label' => 'HTML kaynağı',
     'source_code_unsupported' => 'İşaretlemenin bir kısmı bu düzenleyici tarafından desteklenmiyor ve kaldırıldı.',
+    'source_code_conflict' => 'Kaynağı düzenlerken içerik güncellendi. Bu kutudaki değişiklikleriniz uygulanmadı ve kaynak modundan çıktığınızda atılacak; gerekiyorsa önce kopyalayın.',
     'image_properties' => 'Görsel özellikleri',
     'image_properties_alt' => 'Alternatif metin',
     'image_properties_alt_hint' => 'Görselin ne gösterdiğini, onu göremeyen birine anlatır gibi açıklayın. Yalnızca görseli dekoratif olarak işaretlerseniz boş bırakın.',

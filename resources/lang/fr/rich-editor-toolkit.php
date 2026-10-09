@@ -28,6 +28,7 @@ return [
     'source_code' => 'Source',
     'source_code_label' => 'Code source HTML',
     'source_code_unsupported' => "Une partie du balisage n'est pas prise en charge par cet éditeur et a été supprimée.",
+    'source_code_conflict' => "Le contenu a été mis à jour pendant que vous modifiiez la source. Vos modifications dans ce champ ne sont pas appliquées et seront perdues en quittant le mode source ; copiez-les d'abord si nécessaire.",
     'image_properties' => 'Propriétés de l\'image',
     'image_properties_alt' => 'Texte alternatif',
     'image_properties_alt_hint' => 'Décrivez ce que montre l\'image, comme à une personne qui ne peut pas la voir. Ne le laissez vide que si vous marquez l\'image comme décorative.',

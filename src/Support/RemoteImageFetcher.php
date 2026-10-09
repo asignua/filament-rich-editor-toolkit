@@ -35,8 +35,8 @@ use Throwable;
  *  5. NO REDIRECTS. A 3xx is a failure: a redirect is a new URL that would need steps 1-4 again, and a
  *     allow-listed host that redirects elsewhere is exactly the open-redirect abuse this guards.
  *  6. LIMITS. Connect/total timeout and a byte cap on the BYTES THAT COME OFF THE WIRE: `Content-Length`
- *     (`on_headers`), libcurl's own `CURLOPT_MAXFILESIZE_LARGE`, and a capped sink that refuses the
- *     write that crosses the cap (which makes libcurl abort the transfer). The response is never
+ *     (`on_headers`) and a capped sink that takes none of the write that crosses the cap (a short
+ *     write, which makes libcurl abort the transfer on Guzzle 7 and 8 alike). The response is never
  *     decompressed ({@see self::requestOptions()}): a body that arrives `Content-Encoding: gzip`
  *     is refused, because a few kilobytes of gzip inflate into gigabytes (a "gzip bomb").
  *  6a. NO PROXY. The request goes out WITHOUT a proxy, whatever `HTTPS_PROXY` / `ALL_PROXY` say:
@@ -114,7 +114,7 @@ final class RemoteImageFetcher
     /**
      * Second-level public suffixes under which unrelated parties register names: a wildcard over
      * one of them (`*.co.uk`) would allow-list every site of the country. Best effort, NOT the
-     * Public Suffix List: it holds the common ones. The same list lives in
+     * Public Suffix List: it holds the common ones, plus the big shared-hosting domains. The same list lives in
      * `resources/js/src/paste-images.js` and `tests/fixtures/host-allow.json` pins them together.
      *
      * @var list<string>
@@ -122,6 +122,11 @@ final class RemoteImageFetcher
     public const array PUBLIC_SUFFIXES = [
         'ac.jp',
         'ac.uk',
+        'amazonaws.com',
+        'appspot.com',
+        'azurewebsites.net',
+        'blogspot.com',
+        'cloudfront.net',
         'co.id',
         'co.il',
         'co.in',
@@ -156,14 +161,18 @@ final class RemoteImageFetcher
         'edu.au',
         'edu.cn',
         'edu.ua',
+        'firebaseapp.com',
+        'github.io',
         'go.jp',
         'gov.au',
         'gov.br',
         'gov.cn',
         'gov.ua',
         'gov.uk',
+        'herokuapp.com',
         'in.ua',
         'kiev.ua',
+        'kyiv.ua',
         'ltd.uk',
         'lviv.ua',
         'me.uk',
@@ -178,6 +187,7 @@ final class RemoteImageFetcher
         'net.tr',
         'net.ua',
         'net.uk',
+        'netlify.app',
         'or.jp',
         'or.kr',
         'org.au',
@@ -191,8 +201,12 @@ final class RemoteImageFetcher
         'org.ua',
         'org.uk',
         'org.za',
+        'pages.dev',
         'plc.uk',
         'sch.uk',
+        'vercel.app',
+        'web.app',
+        'workers.dev',
     ];
 
     /** @var Closure(string): list<string> */

@@ -19,6 +19,10 @@
         {"name": "an image adds nothing", "html": "<p>Look <img src=\"/a.png\" alt=\"alt text\"> here</p>", "characters": 10, "words": 2},
         {"name": "an image caption is an attribute, not text (span wrapper)", "html": "<p>Before <span class=\"asignua-rte-figure asignua-rte-align-center\"><img src=\"/a.png\"><span class=\"asignua-rte-caption\">A long caption here</span></span> after</p>", "characters": 13, "words": 2},
         {"name": "an image caption is an attribute, not text (figure)", "html": "<figure><img src=\"/a.png\"><figcaption>Caption text</figcaption></figure><p>Next</p>", "characters": 4, "words": 1},
+        {"name": "a paragraph with the caption class is text", "html": "<p class=\"asignua-rte-caption\">Caption in a paragraph</p>", "characters": 22, "words": 4},
+        {"name": "a caption-class span outside an image wrapper is text", "html": "<p>Hi <span class=\"asignua-rte-caption\">there you</span></p>", "characters": 12, "words": 3},
+        {"name": "a figcaption of a figure without exactly one image is text", "html": "<figure><img src=\"/a.png\"><img src=\"/b.png\"><figcaption>Two pics</figcaption></figure><p>Next</p>", "characters": 12, "words": 3},
+        {"name": "a figcaption with no image at all is text", "html": "<figure><figcaption>Just words</figcaption></figure>", "characters": 10, "words": 2},
         {"name": "empty paragraph", "html": "<p></p>", "characters": 0, "words": 0},
         {"name": "only an image", "html": "<p><img src=\"/a.png\"></p>", "characters": 0, "words": 0},
         {

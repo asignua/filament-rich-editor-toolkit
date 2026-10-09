@@ -132,6 +132,9 @@ const dissolve = (el) => {
 // Reverse document order: inner elements before the elements that contain them.
 const descending = (root, selector) => Array.from(root.querySelectorAll(selector)).reverse()
 
+/** Toolkit tools that only borrow another tool's active state (see {@see allowedFromToolbar}). */
+const BORROW_ONLY_TOOLS = new Set(['linkOptions', 'imageProperties'])
+
 /**
  * The set of tool keys the field offers, or null when the toolbar cannot be read.
  *
@@ -155,13 +158,14 @@ export const allowedFromToolbar = (root) => {
             const binding = button.getAttribute('x-bind:class') || ''
             const calls = binding.split('isActive(').slice(1)
 
-            // A STOCK button that opens a dialog mounts the action of its own name
-            // (`mountAction('link', ...)`). A plugin tool that merely borrows the active state of a
-            // stock one (the toolkit's `linkOptions` and `imageProperties` use `activeKey('link')` /
-            // `activeKey('image')` so that they light up inside a link / on an image) mounts a
-            // different action, and must not count as the mark being offered: a field with only
-            // "Link options" has no Link button. Buttons without such a call (bold, lists, table, ...)
-            // run a command directly and are unaffected.
+            // The toolkit's OWN tools (`linkOptions`, `imageProperties`) merely borrow the active state
+            // of a stock one (`activeKey('link')` / `activeKey('image')`, so that they light up inside a
+            // link / on an image) and mount an action of a different name: they must not count as the
+            // mark being offered, a field with only "Link options" has no Link button. Any OTHER tool
+            // that mounts its own dialog counts as what its `isActive()` names: a third-party link
+            // editor (the rich-links plugin: `isActive('link')` + `mountAction('richLink')`) is a real
+            // way to create links, and paste must not strip them from its field. Buttons without a
+            // mountAction (bold, lists, table, ...) run a command directly and are unaffected.
             const mounted = (button.getAttribute('x-on:click') || button.getAttribute('@click') || '').match(
                 /mountAction\(\s*['"]([A-Za-z0-9_-]+)['"]/,
             )
@@ -173,7 +177,7 @@ export const allowedFromToolbar = (root) => {
                     continue
                 }
 
-                if (mounted && mounted[1] !== name[1]) {
+                if (mounted && BORROW_ONLY_TOOLS.has(mounted[1]) && mounted[1] !== name[1]) {
                     continue
                 }
 

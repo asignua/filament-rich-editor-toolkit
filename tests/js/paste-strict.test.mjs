@@ -236,6 +236,17 @@ const stockLink = toolButton("'link', []", "$wire.mountAction('link', { editorSe
 const linkOptions = toolButton("'link', []", "$wire.mountAction('linkOptions', { editorSelection, ...{ newTab: 1 } }, JSON.parse('{}'))")
 const imageProperties = toolButton("'image', []", "$wire.mountAction('imageProperties', { editorSelection }, JSON.parse('{}'))")
 
+// The rich-links plugin (asignua/filament-rich-links) replaces the stock Link button with a full
+// link editor: `activeJsExpression("$getEditor()?.isActive('link') && [...].some(...)")` and
+// `mountAction('richLink')`. Fixture shaped after RichLinksPlugin::getEditorTools(); the plugin is
+// not installed in this package's dev vendor, so the markup is copied from its source.
+const richLinks = `<button type="button" x-bind:class="{ 'fi-active': editorUpdatedAt &amp;&amp; $getEditor()?.isActive('link') &amp;&amp; JSON.parse('[&quot;/ee-link/&quot;]').some((prefix) =&gt; ($getEditor()?.getAttributes('link')?.href ?? '').startsWith(prefix)) }" x-on:click="$wire.mountAction('richLink', { editorSelection, ...{ url: $getEditor().getAttributes('link')?.href } }, JSON.parse('{}'))"></button>`
+
+test('a rich-links button counts as a Link tool (it is a full link editor, not a borrower)', () => {
+    assert.equal(allowedFromToolbar(field(button("'bold', []"), richLinks)).has('link'), true)
+    assert.equal(allowedFromToolbar(field(richLinks, linkOptions)).has('link'), true)
+})
+
 test('a "Link options" button does not make the link mark allowed (it only borrows the link state)', () => {
     assert.equal(allowedFromToolbar(field(button("'bold', []"), linkOptions)).has('link'), false)
     assert.deepEqual([...allowedFromToolbar(field(button("'bold', []"), linkOptions))], ['bold'])

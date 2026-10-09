@@ -28,6 +28,7 @@ return [
     'source_code' => 'Bron',
     'source_code_label' => 'HTML-bron',
     'source_code_unsupported' => 'Een deel van de opmaak wordt niet ondersteund door deze editor en is verwijderd.',
+    'source_code_conflict' => 'De inhoud is bijgewerkt terwijl u de broncode bewerkte. Uw wijzigingen in dit vak zijn niet toegepast en gaan verloren als u de broncodeweergave verlaat; kopieer ze eerst als u ze nodig hebt.',
     'image_properties' => 'Afbeeldingseigenschappen',
     'image_properties_alt' => 'Alternatieve tekst',
     'image_properties_alt_hint' => 'Beschrijf wat de afbeelding toont, zoals je dat tegen iemand zou zeggen die het niet kan zien. Laat leeg alleen als je de afbeelding als decoratief markeert.',

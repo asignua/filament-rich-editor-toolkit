@@ -305,6 +305,23 @@ class LinkOptionsTest extends TestCase
         $this->assertSame(['target' => null, 'rel' => 'nofollow'], LinkOptionsPlugin::attributesFrom(['newTab' => false, 'rel' => ['nofollow', 'opener', 'bogus']]));
     }
 
+    public function test_the_existing_rel_sent_by_the_browser_is_filtered_through_the_whitelist(): void
+    {
+        $this->assertSame(
+            ['target' => null, 'rel' => 'me author'],
+            LinkOptionsPlugin::attributesFrom(['newTab' => false, 'rel' => []], 'ME opener bogus javascript:x author me'),
+            'unlisted tokens and opener are not stored, the rest is lowercased and deduplicated',
+        );
+
+        config()->set('rich-editor-toolkit.link_options.rel_tokens', ['me', 'opener']);
+
+        $this->assertSame(
+            ['target' => '_blank', 'rel' => 'me noopener noreferrer'],
+            LinkOptionsPlugin::attributesFrom(['newTab' => true, 'rel' => []], 'me opener author'),
+            'opener is never stored, even when an integrator listed it',
+        );
+    }
+
     public function test_editable_tokens_for_the_checkboxes(): void
     {
         $this->assertSame(['nofollow', 'ugc'], LinkOptionsPlugin::editableTokens('UGC me nofollow noopener'));

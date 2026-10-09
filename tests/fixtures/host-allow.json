@@ -2,6 +2,11 @@
  "suffixes": [
   "ac.jp",
   "ac.uk",
+  "amazonaws.com",
+  "appspot.com",
+  "azurewebsites.net",
+  "blogspot.com",
+  "cloudfront.net",
   "co.id",
   "co.il",
   "co.in",
@@ -36,14 +41,18 @@
   "edu.au",
   "edu.cn",
   "edu.ua",
+  "firebaseapp.com",
+  "github.io",
   "go.jp",
   "gov.au",
   "gov.br",
   "gov.cn",
   "gov.ua",
   "gov.uk",
+  "herokuapp.com",
   "in.ua",
   "kiev.ua",
+  "kyiv.ua",
   "ltd.uk",
   "lviv.ua",
   "me.uk",
@@ -58,6 +67,7 @@
   "net.tr",
   "net.ua",
   "net.uk",
+  "netlify.app",
   "or.jp",
   "or.kr",
   "org.au",
@@ -71,8 +81,12 @@
   "org.ua",
   "org.uk",
   "org.za",
+  "pages.dev",
   "plc.uk",
-  "sch.uk"
+  "sch.uk",
+  "vercel.app",
+  "web.app",
+  "workers.dev"
  ],
  "cases": [
   {
@@ -213,6 +227,55 @@
    "host": "img.example.co.uk",
    "patterns": [
     "img.example.co.uk"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "evil.github.io",
+   "patterns": [
+    "*.github.io"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "evil.blogspot.com",
+   "patterns": [
+    "*.blogspot.com"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "x.amazonaws.com",
+   "patterns": [
+    "*.amazonaws.com"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "evil.kyiv.ua",
+   "patterns": [
+    "*.kyiv.ua"
+   ],
+   "allowed": false
+  },
+  {
+   "host": "a.b.github.io",
+   "patterns": [
+    "*.b.github.io"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "img.brand.cloudfront.net",
+   "patterns": [
+    "*.brand.cloudfront.net"
+   ],
+   "allowed": true
+  },
+  {
+   "host": "brand.cloudfront.net",
+   "patterns": [
+    "brand.cloudfront.net"
    ],
    "allowed": true
   }
