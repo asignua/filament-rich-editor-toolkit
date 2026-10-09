@@ -9,16 +9,17 @@
 
 <img class="filament-hidden" src="https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.0.0/art/cover.jpg" alt="Filament Rich Editor Toolkit">
 
-Nine free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
+Ten free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
 reporting in Filament's GitHub Help:
 
 | Plugin | Fixes |
 | --- | --- |
-| `PasteCleanPlugin` | Pasting from Word / Google Docs drags in colours, fonts, `mso-*` junk and `<span style>` soup; optionally a paste is cut down to what the field's toolbar offers ([#20484](https://github.com/filamentphp/filament/discussions/20484), [#20048](https://github.com/filamentphp/filament/discussions/20048)). |
+| `PasteCleanPlugin` | Pasting from Word / Google Docs drags in colours, fonts, `mso-*` junk and `<span style>` soup, and loses their pictures; optionally a paste is cut down to what the field's toolbar offers ([#20484](https://github.com/filamentphp/filament/discussions/20484), [#20048](https://github.com/filamentphp/filament/discussions/20048)). |
 | `CustomAttributesPlugin` | `class`, `id`, `style` and `data-*` written in the source view are silently stripped, in the browser **and** on the server. |
 | `EmbedPlugin` | `<iframe>` / video embeds are removed by the schema and the sanitizer. |
 | `ImageUrlPlugin` | No way to insert an image that lives on another site. |
 | `ImagePropertiesPlugin` | No caption, no alignment, and no way to mark an image as decorative (`alt=""`) ([#8455](https://github.com/filamentphp/filament/discussions/8455), [#16860](https://github.com/filamentphp/filament/issues/16860), [#20296](https://github.com/filamentphp/filament/discussions/20296)). |
+| `LinkOptionsPlugin` | No way to set `rel` (`nofollow`, `sponsored`, `ugc`) on a link, no control over what a stored `rel`/`target` may contain, no `noopener` guarantee ([#16829](https://github.com/filamentphp/filament/issues/16829), [#19478](https://github.com/filamentphp/filament/issues/19478), [#5705](https://github.com/filamentphp/filament/discussions/5705), [#19028](https://github.com/filamentphp/filament/discussions/19028)). |
 | `FullscreenPlugin` | No fullscreen mode for long content. |
 | `SourceCodePlugin` | No HTML source view ([#17718](https://github.com/filamentphp/filament/discussions/17718), [#19141](https://github.com/filamentphp/filament/discussions/19141)). |
 | `CharacterCountPlugin` + `RichTextLength` | No counter; limits that count HTML tags, or only characters, not the text the reader sees. |
@@ -76,6 +77,7 @@ use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
+use Asignua\RichEditorToolkit\Plugins\LinkOptionsPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
 use Filament\Forms\Components\RichEditor;
@@ -87,19 +89,20 @@ RichEditor::make('body')
         EmbedPlugin::make(),
         ImageUrlPlugin::make(),
         ImagePropertiesPlugin::make(),
+        LinkOptionsPlugin::make(),
         FullscreenPlugin::make(),
         SourceCodePlugin::make(),
     ])
     ->textLength(max: 5000, maxWords: 800) // validation rule + counter
     ->toolbarButtons([
-        ['bold', 'italic', 'link', 'cleanFormat'],
+        ['bold', 'italic', 'link', 'linkOptions', 'cleanFormat'],
         ['h2', 'h3', 'bulletList', 'orderedList'],
         ['embed', 'imageUrl', 'imageProperties', 'sourceCode', 'fullscreen'],
     ]);
 ```
 
 A toolbar button is shown only when it is listed in `toolbarButtons()` (`cleanFormat`, `embed`, `imageUrl`,
-`imageProperties`, `sourceCode`, `fullscreen`); an unknown name makes Filament throw, so list only the plugins you installed.
+`imageProperties`, `linkOptions`, `sourceCode`, `fullscreen`); an unknown name makes Filament throw, so list only the plugins you installed.
 
 ### PasteCleanPlugin
 
@@ -122,8 +125,68 @@ paragraph stay in it, and a table cell selection is left alone. A prefix you lis
 PasteCleanPlugin::make()->keepLinkPrefixes(['/internal-link/'])
 ```
 
-Images pasted from Word and Google Docs are removed (Filament uploads only `data:` images from the clipboard); add them
-through the upload button.
+#### Images from Word and Google Docs
+
+By default a picture pasted from Word or Google Docs is **removed**: the clipboard carries a `file:///C:/…/clip_image001.png`
+path (Word) or an `https://lh7-rt.googleusercontent.com/…` URL that a browser cannot read from script (Google Docs), and
+Filament's own paste handler uploads only `data:` images. Switch the recovery on per field or globally
+(`paste_clean.upload_images`):
+
+```php
+RichEditor::make('body')
+    ->toolbarButtons([['bold', 'attachFiles']]) // or ->fileAttachments()
+    ->plugins([PasteCleanPlugin::make()->uploadImages()])
+```
+
+What happens:
+
+- **Word.** The picture bytes are on the clipboard too, as `text/rtf` (`{\pict … \pngblip <hex>}`). The browser reads them
+  and swaps each `file:///` source for a `data:` URL. The RTF has no names, so pictures are matched to the `<img>` tags
+  **by order**; if the counts differ (a shape, a bullet picture, a missing RTF flavour) **nothing** is matched and the
+  pictures are removed as before, because a wrong picture in the right place is worse than none. Only PNG and JPEG are
+  recovered (EMF/WMF are not images a browser can show). Firefox and Safari may not expose `text/rtf`; then the pictures
+  are removed.
+- **Google Docs.** The browser asks the **server** to download the picture (see below) and gets a `data:` URL back.
+- **Then Filament takes over.** The rewritten paste goes through Filament's own pasted-image upload: the field's accepted
+  file types and maximum size are enforced, the file is stored by the field's disk/directory/`saveUploadedFileAttachmentUsing`
+  and the image gets its `data-id`. Nothing is stored as base64.
+- **What could not be recovered is removed and counted**: the editor shows "Images that could not be imported: 2" (Filament's
+  own file-validation message area) once the upload has finished.
+
+It runs only on a field that takes file attachments (Filament's rule: the `attachFiles` button or `->fileAttachments()`), and
+never on a paste from inside an editor or a pasted file.
+
+**How the paste is intercepted.** ProseMirror runs `transformPastedHTML` (the cleanup) first and then offers the paste to the
+`handlePaste` of each plugin in turn; Filament's handler ignores that and re-reads `event.clipboardData` synchronously. The
+rewrite needs `await`, so the module has priority 1000 (Filament's `localFiles` has 100), stops the original event, converts
+asynchronously and then dispatches a new `paste` event on the editor whose `clipboardData` is a small stand-in holding the
+rewritten HTML. Filament and ProseMirror see an ordinary paste of `data:` images. If you type while the pictures load, the cursor
+is where you put it; otherwise the paste lands where it was made.
+
+**The server-side download (SSRF).** The request URL comes from the browser, so every step is a gate
+(`Support\RemoteImageFetcher`):
+
+1. https only, port 443, no credentials, no whitespace/control characters/backslashes; a plain DNS name (no IP literal,
+   `localhost`, or numeric forms such as `2130706433`).
+2. The host must match `paste_clean.remote_image_hosts` (default `['*.googleusercontent.com']`; `*.x.y` = any subdomain, never the
+   bare domain; otherwise an exact name). An empty list turns Google Docs off and leaves Word.
+3. The name is resolved by the server and **every** address must be public: loopback, private, link-local (cloud metadata),
+   CGNAT, documentation, multicast and the IPv4-wrapping IPv6 ranges (mapped, NAT64, 6to4, Teredo) are refused. A name that
+   resolves to a public *and* a private address is refused (the shape of a DNS-rebinding setup).
+4. The connection is **pinned** to the address that was checked (`CURLOPT_RESOLVE`), so a second lookup cannot return something else.
+5. No redirects (a 3xx is a failure).
+6. Timeouts, and a byte cap enforced while downloading (`paste_clean.remote_image_max_kb`, 5120 by default; the field's own
+   `fileAttachmentsMaxSize()` wins when smaller).
+7. The type is decided by the file's **magic bytes** (png, jpeg, gif, webp). The remote `Content-Type` is ignored; SVG and HTML are refused.
+
+**Who may call it.** The download is an editor *action* (`asignuaFetchRemoteImage`) that the browser mounts without a modal:
+the same Livewire request as every toolbar action. That gives it the page's session, CSRF protection and authorisation for
+free, and it answers only with a `data:` URL or a short error code, never an exception message. On top of that it refuses
+fields that are disabled or take no attachments, and it is rate limited per user (per IP for guests):
+`paste_clean.remote_image_rate_limit` (60 per minute). It works outside panels too, but note that on a public form it is open to
+anyone who can reach that form, within the limits above. Why a `data:` URL and not a direct upload: Filament's pasted-image
+upload already does validation, storage and the attachment record, so reusing it keeps one code path and your
+`saveUploadedFileAttachmentUsing`; the cost is about a third more bytes on the wire for the (capped) picture.
 
 #### Strict paste
 
@@ -266,6 +329,39 @@ enough. A picture that carries no information (a divider, a flourish) is **Decor
 decide for every image: describe it, or mark it decorative. The sanitizer writes an empty attribute as a bare `alt`,
 which HTML reads as `alt=""`.
 
+### LinkOptionsPlugin
+
+`rel` and `target` of a link. List `linkOptions` in `toolbarButtons()`: the button is enabled while the cursor is in a
+link and opens a dialog with **Open in a new tab** and the rel tokens **nofollow**, **sponsored** and **ugc**.
+
+What Filament already does: its link dialog has a URL and an "Open in new tab" checkbox (`target="_blank"`), the TipTap
+mark keeps `target` and `rel`, and the stock renderer passes both through. It never writes `rel`, and it checks nothing:
+`target="_top"` or `rel="whatever opener"` in stored HTML reach the page unchanged. The stock link action is built by a
+static factory with no seam for another field, and `asignua/filament-rich-links` writes its marker into the same `link`
+mark, so this is a **second button** that changes only `target`/`rel` of the link under the cursor (`updateAttributes('link', …)`),
+and leaves the address to the stock button or the rich-links one. A new tab always stores `rel="noopener noreferrer"`.
+
+The plugin has a **server half**: it is added by `RichEditorToolkit::plugins()` / `renderer()`, and the toolkit's renderer then
+normalises every `<a>` it outputs:
+
+- `target` is `_blank` or it is dropped (`_self`, `_top`, frame names);
+- `rel` keeps only whitelisted tokens (`link_options.rel_tokens`: the HTML link types without `opener`, so `rel="me"` survives);
+- a `_blank` link always gets `noopener noreferrer`, whatever the stored HTML says.
+
+Optionally add rel tokens to links that **leave the site**, at render time only (the stored content is not changed):
+
+```php
+// config/rich-editor-toolkit.php
+'link_options' => ['external_rel' => ['nofollow'], 'internal_hosts' => ['shop.example.com']],
+
+// or per renderer
+LinkOptionsPlugin::make()->externalRel(['nofollow'])->internalHosts(['shop.example.com'])
+```
+
+"External" is an absolute `http(s)://` or protocol-relative URL whose host is not the host of `app.url` or an `internal_hosts` entry
+(a leading `www.` is ignored; a subdomain is another host unless listed). Relative links, `#anchors`, `mailto:`/`tel:` and the
+`/ee-link/…` markers of rich-links are never external. An editor cannot opt a single link out of `external_rel`.
+
 ### FullscreenPlugin
 
 A toolbar button that turns the field into a full-viewport overlay and back:
@@ -400,7 +496,7 @@ $renderer = RichContentRenderer::make($post->body)
 {!! RichEditorToolkit::toHtml($renderer) !!}
 ```
 
-This adds `CustomAttributesPlugin`, `EmbedPlugin` and `ImagePropertiesPlugin` and sanitizes with the toolkit's **own** sanitizer: a copy of
+This adds `CustomAttributesPlugin`, `EmbedPlugin`, `ImagePropertiesPlugin` and `LinkOptionsPlugin` and sanitizes with the toolkit's **own** sanitizer: a copy of
 Filament's config plus your attribute allow-list and, when `EmbedPlugin` is attached, `<iframe>` whose `src` passes the
 embed allow-list. Filament's shared sanitizer is never changed, so `TextColumn::html()`, `TextEntry::html()`,
 notifications and the Markdown editor keep Filament's defaults. A renderer's own `toHtml()` uses that shared sanitizer,
@@ -411,11 +507,11 @@ to the renderer**: the cleanup happens once, at paste time.
 ## Configuration
 
 See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attributes`, `types`, `embed`, `paste_clean`
-(`keep_link_prefixes`, `strict`), `character_count` (`warn_at`), `fullscreen` (`z_index`), `source_code` (`indent`), `sticky_toolbar`.
+(`keep_link_prefixes`, `strict`, `upload_images`, `remote_image_hosts`, `remote_image_max_kb`, `remote_image_rate_limit`), `link_options` (`rel_tokens`, `external_rel`, `internal_hosts`), `character_count` (`warn_at`), `fullscreen` (`z_index`), `source_code` (`indent`), `sticky_toolbar`.
 
 ## Gotchas
 
-- **Both halves, always.** `CustomAttributesPlugin`, `EmbedPlugin` and `ImagePropertiesPlugin` must be in the editor *and* in the renderer. Miss
+- **Both halves, always.** `CustomAttributesPlugin`, `EmbedPlugin`, `ImagePropertiesPlugin` and `LinkOptionsPlugin` must be in the editor *and* in the renderer. Miss
   the renderer and the data sits in the database and vanishes on the page.
 - **Publish the assets.** A missing `filament:assets` means a 404 for the module URL and a `console.error` from
   Filament's loader. Nothing else fails, the plugin is just absent.
@@ -426,7 +522,7 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
 - **The sanitizer is the toolkit's own.** Allowances apply only to `RichEditorToolkit::renderer()` and
   `RichEditorToolkit::toHtml()`; a plain `RichContentRenderer::toHtml()` and every `->html()` column still drop
   `<iframe>` and the extra attributes.
-- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl`, `imageProperties`, `fullscreen`, `sourceCode` only when the matching plugin is registered.
+- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl`, `imageProperties`, `linkOptions`, `fullscreen`, `sourceCode` only when the matching plugin is registered.
 - **Fullscreen is a fixed overlay, not the top layer.** The top layer would paint above Filament's modals and hide the
   dialogs opened from the toolbar. The price: an ancestor with `transform`, `filter` or `contain` makes `position: fixed`
   fill that ancestor instead of the screen. `overflow` on a section, tab or repeater does not clip it.
@@ -438,6 +534,14 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
   Pasting a captioned image inside the editor keeps the image but not the caption (set it again in the dialog).
   The `imageProperties` button is disabled until an image is selected. `ImageUrlPlugin` images are fine.
   `left`/`right` are floats: clear them below a section that must start on its own line.
+- **Link options after the renderer change.** With `LinkOptionsPlugin` in the renderer (it is in `RichEditorToolkit::plugins()`), a stored
+  `rel` is filtered to the whitelist and `target` to `_blank` on every page, including old content. Add the tokens you rely on to
+  `link_options.rel_tokens`. The `linkOptions` button is disabled outside a link; to change the address use the stock link button.
+  Setting the address again with the stock button writes `target` only and **removes** the `rel` you set: use `linkOptions` last.
+- **Pasted pictures need attachments, an RTF and a count that matches.** `uploadImages()` does nothing on a field without file
+  attachments; Word pictures are recovered only when the clipboard has `text/rtf` and as many recoverable pictures as `<img>` tags.
+  Google Docs pictures are downloaded by the server: the host must be on `remote_image_hosts`, and `app.url`/DNS/egress firewall
+  of the server must allow the lookup. A picture over the field's size or type limit is removed, not uploaded.
 - **Counter and rule are separate.** The counter does not validate and the rule does not draw anything; `textLength()`
   adds both. A browser can be bypassed, so keep the rule.
 - **Strict paste is about pastes.** It does not unformat existing content and does not stop Ctrl+B; the `cleanFormat`

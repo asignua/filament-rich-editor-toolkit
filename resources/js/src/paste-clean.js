@@ -10,7 +10,10 @@
 // `data:` images itself, and what the clipboard carries is `file:///` paths,
 // foreign hosts or data URIs, none of which would survive as proper uploaded
 // files. Only images that already point at our own site AND carry a `data-id`
-// (i.e. were uploaded through the editor) are kept.
+// (i.e. were uploaded through the editor) are kept. With PasteCleanPlugin::uploadImages() the
+// recoverable ones never get here as such: paste-images.js turns them into `data:` images first,
+// Filament uploads those (and gives them a `data-id`), and only what could not be recovered is
+// left for this pass to remove.
 //
 // In-editor paste (HTML containing `data-pm-slice`) is NEVER touched: the
 // class/id/style in it are what the editor itself put there. TipTap uses the

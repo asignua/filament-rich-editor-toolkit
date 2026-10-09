@@ -15,6 +15,7 @@ use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
+use Asignua\RichEditorToolkit\Plugins\LinkOptionsPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
 use Asignua\RichEditorToolkit\Tests\TestCase;
@@ -31,7 +32,7 @@ class PluginsTest extends TestCase
 {
     public function test_every_plugin_implements_the_filament_contract(): void
     {
-        foreach ([PasteCleanPlugin::class, CustomAttributesPlugin::class, EmbedPlugin::class, ImageUrlPlugin::class, FullscreenPlugin::class, CharacterCountPlugin::class, SourceCodePlugin::class, ImagePropertiesPlugin::class] as $class) {
+        foreach ([PasteCleanPlugin::class, CustomAttributesPlugin::class, EmbedPlugin::class, ImageUrlPlugin::class, FullscreenPlugin::class, CharacterCountPlugin::class, SourceCodePlugin::class, ImagePropertiesPlugin::class, LinkOptionsPlugin::class] as $class) {
             $this->assertInstanceOf(RichContentPlugin::class, $class::make());
         }
     }
@@ -208,7 +209,7 @@ class PluginsTest extends TestCase
 
         $this->assertStringContainsString('data-track', (string) json_encode($component->get('data')));
 
-        foreach (['custom-attributes.js', 'paste-clean.js', 'embed.js', 'fullscreen.js', 'character-count.js', 'source-code.js', 'image-properties.js'] as $module) {
+        foreach (['custom-attributes.js', 'paste-clean.js', 'embed.js', 'fullscreen.js', 'character-count.js', 'source-code.js', 'image-properties.js', 'paste-images.js'] as $module) {
             $this->assertStringContainsString($module, $html);
         }
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.fullscreen'), $html);
@@ -217,6 +218,7 @@ class PluginsTest extends TestCase
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.embed'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.image_url'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.image_properties'), $html);
+        $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.link_options'), $html);
     }
 
     public function test_the_embed_modal_inserts_a_rebuilt_iframe_node_and_rejects_a_foreign_host(): void

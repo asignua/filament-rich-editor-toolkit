@@ -2,7 +2,7 @@
 // Each entry is a standalone module (Filament loads it with a dynamic import()).
 import { build } from 'esbuild'
 
-const entries = ['paste-clean', 'custom-attributes', 'embed', 'fullscreen', 'character-count', 'source-code', 'image-properties']
+const entries = ['paste-clean', 'paste-images', 'custom-attributes', 'embed', 'fullscreen', 'character-count', 'source-code', 'image-properties']
 
 await Promise.all(
     entries.map((name) =>

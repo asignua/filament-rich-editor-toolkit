@@ -8,7 +8,9 @@ use Asignua\RichEditorToolkit\Extensions\CustomAttributes;
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
+use Asignua\RichEditorToolkit\Plugins\LinkOptionsPlugin;
 use Asignua\RichEditorToolkit\Support\EmbedSrcSanitizer;
+use Asignua\RichEditorToolkit\Support\LinkAttributes;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
@@ -29,8 +31,9 @@ use Symfony\Component\HtmlSanitizer\HtmlSanitizerInterface;
  * of which has a tiptap schema to filter iframes by host. The toolkit sanitizes with its own
  * instance, built from a copy of Filament's config ({@see self::sanitizer()}).
  *
- * Only the plugins that have a server half are added here: custom attributes, embeds, and image
- * properties (`alt=""`, the caption and the alignment of an image). {@see Plugins\PasteCleanPlugin}
+ * Only the plugins that have a server half are added here: custom attributes, embeds, image
+ * properties (`alt=""`, the caption and the alignment of an image) and link options (the `rel`/`target`
+ * normalisation of every link). {@see Plugins\PasteCleanPlugin}
  * has none on purpose: it cleans once, at paste time, and a second pass at render time would
  * strip the very `class`/`style` that CustomAttributesPlugin exists to keep.
  */
@@ -70,7 +73,7 @@ final class RichEditorToolkit
      * @param list<string>|null $attributes
      * @param list<string>|null $types
      *
-     * @return list<CustomAttributesPlugin|EmbedPlugin|ImagePropertiesPlugin>
+     * @return list<CustomAttributesPlugin|EmbedPlugin|ImagePropertiesPlugin|LinkOptionsPlugin>
      */
     public static function plugins(?array $attributes = null, ?array $types = null): array
     {
@@ -88,18 +91,21 @@ final class RichEditorToolkit
             $customAttributes,
             EmbedPlugin::make(),
             ImagePropertiesPlugin::make(),
+            LinkOptionsPlugin::make(),
         ];
     }
 
     /**
      * Renders any `RichContentRenderer` through the toolkit's sanitizer. The allowances follow
      * the renderer's plugins: the attribute names of its {@see CustomAttributesPlugin}s, and
-     * `<iframe>` only when an {@see EmbedPlugin} is attached.
+     * `<iframe>` only when an {@see EmbedPlugin} is attached, `rel`/`target` on `<a>` (and the
+     * {@see LinkAttributes} pass over the result) only when a {@see LinkOptionsPlugin} is.
      */
     public static function toHtml(RichContentRenderer $renderer): string
     {
         $attributes = [];
         $embeds = false;
+        $links = null;
 
         foreach ($renderer->getPlugins() as $plugin) {
             if ($plugin instanceof CustomAttributesPlugin) {
@@ -109,9 +115,15 @@ final class RichEditorToolkit
             if ($plugin instanceof EmbedPlugin) {
                 $embeds = true;
             }
+
+            if ($plugin instanceof LinkOptionsPlugin) {
+                $links = $plugin;
+            }
         }
 
-        return self::sanitizer($attributes, $embeds)->sanitize($renderer->toUnsafeHtml());
+        $html = self::sanitizer($attributes, $embeds, $links !== null)->sanitize($renderer->toUnsafeHtml());
+
+        return $links === null ? $html : LinkAttributes::apply($html, $links->getExternalRel(), $links->getInternalHosts());
     }
 
     /**
@@ -120,9 +132,9 @@ final class RichEditorToolkit
      *
      * @param list<string>|null $attributes null = {@see self::attributeNames()}
      */
-    public static function sanitizer(?array $attributes = null, bool $embeds = true): HtmlSanitizerInterface
+    public static function sanitizer(?array $attributes = null, bool $embeds = true, bool $links = false): HtmlSanitizerInterface
     {
-        return new HtmlSanitizer(self::applySanitizerAllowances(app(HtmlSanitizerConfig::class), $attributes, $embeds));
+        return new HtmlSanitizer(self::applySanitizerAllowances(app(HtmlSanitizerConfig::class), $attributes, $embeds, $links));
     }
 
     /**
@@ -184,10 +196,28 @@ final class RichEditorToolkit
      * hardening values while rendering, i.e. BEFORE the sanitizer runs. The iframe `src` is
      * checked against the embed allow-list by {@see EmbedSrcSanitizer}.
      *
+     * `$links` makes sure `rel` and `target` are allowed on `<a>` (Symfony's default safe set has
+     * them; a stricter config of the host may not), by the same union rule. Their VALUES are the
+     * business of {@see LinkAttributes}, which runs over the sanitized output.
+     *
      * @param list<string>|null $attributes null = {@see self::attributeNames()}
      */
-    public static function applySanitizerAllowances(HtmlSanitizerConfig $config, ?array $attributes = null, bool $embeds = true): HtmlSanitizerConfig
+    public static function applySanitizerAllowances(HtmlSanitizerConfig $config, ?array $attributes = null, bool $embeds = true, bool $links = false): HtmlSanitizerConfig
     {
+        if ($links) {
+            foreach (['rel', 'target'] as $attribute) {
+                $elements = ['a'];
+
+                foreach ($config->getAllowedElements() as $element => $allowed) {
+                    if (isset($allowed[$attribute])) {
+                        $elements[] = $element;
+                    }
+                }
+
+                $config = $config->allowAttribute($attribute, array_values(array_unique($elements)));
+            }
+        }
+
         if ($embeds) {
             $config = $config->allowElement('iframe');
 

@@ -9,6 +9,7 @@ use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
 use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImagePropertiesPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
+use Asignua\RichEditorToolkit\Plugins\LinkOptionsPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Asignua\RichEditorToolkit\Plugins\SourceCodePlugin;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -47,7 +48,8 @@ class DemoForm extends Component implements HasActions, HasForms
                         EmbedPlugin::make(),
                         ImageUrlPlugin::make(),
                         ImagePropertiesPlugin::make(),
-                        PasteCleanPlugin::make()->strict(),
+                        LinkOptionsPlugin::make(),
+                        PasteCleanPlugin::make()->strict()->uploadImages(),
                         FullscreenPlugin::make(),
                         SourceCodePlugin::make(),
                     ])
@@ -56,7 +58,7 @@ class DemoForm extends Component implements HasActions, HasForms
                         'image' => ['imageProperties'],
                     ])
                     ->textLength(max: 500, maxWords: 80) // @phpstan-ignore method.notFound (macro)
-                    ->toolbarButtons([['bold', 'link', 'h2', 'bulletList', 'table', 'cleanFormat', 'embed', 'imageUrl', 'imageProperties', 'sourceCode', 'fullscreen']]),
+                    ->toolbarButtons([['bold', 'link', 'linkOptions', 'h2', 'bulletList', 'table', 'cleanFormat', 'embed', 'imageUrl', 'imageProperties', 'attachFiles', 'sourceCode', 'fullscreen']]),
             ])
             ->statePath('data');
     }

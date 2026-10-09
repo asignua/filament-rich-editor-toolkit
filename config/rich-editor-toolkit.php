@@ -78,6 +78,47 @@ return [
         // tables become paragraphs, no heading button -> paragraphs, no bold button -> bold is
         // unwrapped, ...). A per-field `PasteCleanPlugin::make()->strict()` overrides this.
         'strict' => false,
+
+        // Upload the pictures of a Word / Google Docs paste instead of removing them
+        // (PasteCleanPlugin::uploadImages()). Needs a field with file attachments; honours its
+        // accepted types and maximum size. Off by default: the old behaviour is to remove them.
+        'upload_images' => false,
+
+        // Hosts the SERVER may download pictures from on the editor's behalf (Google Docs serves its
+        // images from lh*.googleusercontent.com, which a browser cannot read from script).
+        // `*.example.com` = any subdomain (not the bare domain), otherwise an exact host name.
+        // Always https, port 443, no redirects, public addresses only. An empty list = Word only.
+        'remote_image_hosts' => ['*.googleusercontent.com'],
+
+        // Byte cap of one downloaded picture (KB); the field's own maximum applies when smaller.
+        'remote_image_max_kb' => 5120,
+
+        // Downloads one viewer (user id, else IP) may make per minute.
+        'remote_image_rate_limit' => 60,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Link options
+    |--------------------------------------------------------------------------
+    |
+    | LinkOptionsPlugin: `rel_tokens` is the whitelist of rel values that survive rendering (and
+    | the only values the dialog can write besides noopener/noreferrer); `target` is always either
+    | `_blank` or dropped, and a `_blank` link always gets `noopener noreferrer`.
+    |
+    | `external_rel` tokens are added AT RENDER TIME to absolute links to other sites (the stored
+    | content is not changed), e.g. ['nofollow']. `internal_hosts` are extra hosts that count as
+    | this site (the host of `app.url` always does; `www.` is ignored).
+    |
+    */
+
+    'link_options' => [
+        'rel_tokens' => [
+            'alternate', 'author', 'bookmark', 'external', 'help', 'license', 'me', 'next', 'nofollow', 'noopener',
+            'noreferrer', 'prev', 'privacy-policy', 'search', 'sponsored', 'tag', 'terms-of-service', 'ugc',
+        ],
+        'external_rel' => [],
+        'internal_hosts' => [],
     ],
 
     /*

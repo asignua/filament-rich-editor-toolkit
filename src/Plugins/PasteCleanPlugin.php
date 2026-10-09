@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Asignua\RichEditorToolkit\Plugins;
 
 use Asignua\RichEditorToolkit\Assets;
+use Asignua\RichEditorToolkit\Support\RemoteImageException;
+use Asignua\RichEditorToolkit\Support\RemoteImageFetcher;
 use Filament\Actions\Action;
+use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\RichEditor\Plugins\Contracts\RichContentPlugin;
 use Filament\Forms\Components\RichEditor\RichEditorTool;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\HtmlString;
 use Tiptap\Core\Extension;
 
@@ -55,6 +59,14 @@ use Tiptap\Core\Extension;
  * binding (`isActive('bold', [])`), which is independent of the translated label. A field whose
  * toolbar cannot be read is not restricted ("cannot tell" never means "strip everything"). The
  * details are in `resources/js/src/paste-strict.js`.
+ *
+ * Images ({@see self::uploadImages()}, config `paste_clean.upload_images`, off by default): by
+ * default a picture pasted from Word or Google Docs is removed, because what the clipboard carries
+ * is a `file:///` path or a URL the browser cannot read. With the option on, the pictures that can
+ * be recovered are handed to Filament's own "paste an image" upload, and only the rest is removed
+ * (and counted for the editor). Word's bytes come from the clipboard's RTF flavour, in the browser;
+ * Google Docs' pictures are fetched on the SERVER ({@see self::getEditorActions()},
+ * {@see RemoteImageFetcher}). The mechanics are in `resources/js/src/paste-images.js`.
  */
 class PasteCleanPlugin implements RichContentPlugin
 {
@@ -62,6 +74,14 @@ class PasteCleanPlugin implements RichContentPlugin
     protected ?array $keepLinkPrefixes = null;
 
     protected ?bool $strict = null;
+
+    protected ?bool $uploadImages = null;
+
+    /** @var list<string>|null */
+    protected ?array $remoteImageHosts = null;
+
+    /** The editor action the browser mounts to have a remote picture fetched. */
+    public const string FETCH_ACTION = 'asignuaFetchRemoteImage';
 
     public static function make(): static
     {
@@ -100,6 +120,52 @@ class PasteCleanPlugin implements RichContentPlugin
     }
 
     /**
+     * Upload the pictures of a Word / Google Docs paste instead of removing them (see the class
+     * docblock). Only works on a field with file attachments (Filament's own upload is what stores
+     * the file) and honours that field's accepted types and maximum size. Defaults to the
+     * `paste_clean.upload_images` config, which defaults to off.
+     */
+    public function uploadImages(bool $upload = true): static
+    {
+        $this->uploadImages = $upload;
+
+        return $this;
+    }
+
+    public function isUploadingImages(): bool
+    {
+        return $this->uploadImages ?? (bool) config('rich-editor-toolkit.paste_clean.upload_images', false);
+    }
+
+    /**
+     * Hosts whose pictures the SERVER may download for the editor (Google Docs serves its images
+     * from `lh*.googleusercontent.com`): `*.example.com` = any subdomain, otherwise an exact name.
+     * Defaults to `paste_clean.remote_image_hosts`. An empty list turns remote pictures off and
+     * leaves Word's.
+     *
+     * @param list<string> $hosts
+     */
+    public function remoteImageHosts(array $hosts): static
+    {
+        $this->remoteImageHosts = $hosts;
+
+        return $this;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function getRemoteImageHosts(): array
+    {
+        $hosts = $this->remoteImageHosts ?? (array) config('rich-editor-toolkit.paste_clean.remote_image_hosts', []);
+
+        return array_values(array_unique(array_map(
+            static fn (string $host): string => strtolower(trim($host)),
+            array_filter($hosts, static fn (mixed $host): bool => is_string($host) && trim($host) !== ''),
+        )));
+    }
+
+    /**
      * @return list<string>
      */
     public function getKeepLinkPrefixes(): array
@@ -128,7 +194,17 @@ class PasteCleanPlugin implements RichContentPlugin
             $params['strict'] = ['1'];
         }
 
-        return [Assets::url('paste-clean', $params)];
+        $modules = [Assets::url('paste-clean', $params)];
+
+        if ($this->isUploadingImages()) {
+            $modules[] = Assets::url('paste-images', [
+                'host' => $this->getRemoteImageHosts(),
+                'action' => [self::FETCH_ACTION],
+                'msg' => [__('rich-editor-toolkit::rich-editor-toolkit.paste_images_failed')],
+            ]);
+        }
+
+        return $modules;
     }
 
     /**
@@ -151,6 +227,62 @@ class PasteCleanPlugin implements RichContentPlugin
      */
     public function getEditorActions(): array
     {
-        return [];
+        if (!$this->isUploadingImages() || $this->getRemoteImageHosts() === []) {
+            return [];
+        }
+
+        return [
+            // Mounted by `paste-images.js` WITHOUT a modal: Filament runs a modal-less action at
+            // once and hands its return value back to the browser, which is what makes this a
+            // call-and-answer seam (the same Livewire request as every other toolbar action: CSRF,
+            // session, the page's own authorisation). It never returns an exception message.
+            Action::make(self::FETCH_ACTION)
+                ->label(__('rich-editor-toolkit::rich-editor-toolkit.paste_images_fetch'))
+                ->action(fn (array $arguments, RichEditor $component): array => $this->fetchRemoteImage($arguments['url'] ?? null, $component)),
+        ];
+    }
+
+    /**
+     * The server half of a Google Docs picture. Answers `['dataUrl' => ...]` or `['error' => code]`;
+     * a `data:` URL because Filament's own paste handler then does the rest (type and size check,
+     * upload, the attachment record) exactly as for any other pasted picture.
+     *
+     * @internal public for the test suite; reached through the editor action
+     *
+     * @return array{dataUrl?: string, error?: string}
+     */
+    public function fetchRemoteImage(mixed $url, RichEditor $component): array
+    {
+        $hosts = $this->getRemoteImageHosts();
+
+        // The field must really take attachments: this action must not become a free proxy for
+        // fields that never asked for pictures.
+        if (!is_string($url) || $hosts === [] || $component->isDisabled() || !$component->hasFileAttachments()) {
+            return ['error' => 'disabled'];
+        }
+
+        $perMinute = max(1, (int) config('rich-editor-toolkit.paste_clean.remote_image_rate_limit', 60));
+        $viewer = auth()->id() ?? request()->ip() ?? 'guest';
+
+        if (!RateLimiter::attempt('asignua-rte-remote-image:'.$viewer, $perMinute, static fn (): bool => true, 60)) {
+            return ['error' => 'rate'];
+        }
+
+        $maxBytes = max(1, (int) config('rich-editor-toolkit.paste_clean.remote_image_max_kb', 5120)) * 1024;
+        $fieldMaxKb = $component->getFileAttachmentsMaxSize();
+
+        if ($fieldMaxKb !== null && $fieldMaxKb > 0) {
+            $maxBytes = min($maxBytes, $fieldMaxKb * 1024);
+        }
+
+        $accept = $component->getFileAttachmentsAcceptedFileTypes();
+
+        try {
+            $image = app(RemoteImageFetcher::class)->fetch($url, $hosts, $maxBytes, $accept === null || $accept === [] ? null : array_values($accept));
+        } catch (RemoteImageException $exception) {
+            return ['error' => $exception->reason];
+        }
+
+        return ['dataUrl' => $image->toDataUrl()];
     }
 }
