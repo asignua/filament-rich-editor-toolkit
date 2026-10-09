@@ -38,11 +38,30 @@ use Tiptap\Core\Extension;
  *
  * The button must also be listed in the editor's toolbar:
  * `->toolbarButtons([[..., 'cleanFormat']])`. An unknown button name makes Filament throw.
+ *
+ * Strict mode ({@see self::strict()}, config `paste_clean.strict`): on top of the cleanup the
+ * paste is reduced to what the field's toolbar offers. Filament loads the whole TipTap schema
+ * whatever `toolbarButtons()` says, so a field with only a Bold button still accepts a pasted
+ * table, heading or link (filamentphp/filament discussions #20484, #20048). In strict mode no
+ * `table` button turns tables into paragraphs, no heading button turns headings into
+ * paragraphs (a missing level moves to the nearest offered one, on a tie the deeper), no list
+ * button turns items into paragraphs, and a mark without its button (bold, italic, underline,
+ * strike, subscript, superscript, code, highlight, link) is unwrapped to its text. It also
+ * applies to a paste from inside an editor, which the cleanup itself leaves alone: the toolbar
+ * is the field's rule and two editors on a page may differ.
+ *
+ * HOW THE BROWSER KNOWS THE TOOLBAR: a plugin cannot see the field, so the module reads the
+ * rendered toolbar: each stock button carries the TipTap name it toggles in its Alpine class
+ * binding (`isActive('bold', [])`), which is independent of the translated label. A field whose
+ * toolbar cannot be read is not restricted ("cannot tell" never means "strip everything"). The
+ * details are in `resources/js/src/paste-strict.js`.
  */
 class PasteCleanPlugin implements RichContentPlugin
 {
     /** @var list<string>|null */
     protected ?array $keepLinkPrefixes = null;
+
+    protected ?bool $strict = null;
 
     public static function make(): static
     {
@@ -62,6 +81,22 @@ class PasteCleanPlugin implements RichContentPlugin
         $this->keepLinkPrefixes = $prefixes;
 
         return $this;
+    }
+
+    /**
+     * Reduce a paste to what the field's toolbar offers (see the class docblock). Defaults to
+     * the `paste_clean.strict` config, which defaults to off.
+     */
+    public function strict(bool $strict = true): static
+    {
+        $this->strict = $strict;
+
+        return $this;
+    }
+
+    public function isStrict(): bool
+    {
+        return $this->strict ?? (bool) config('rich-editor-toolkit.paste_clean.strict', false);
     }
 
     /**
@@ -87,7 +122,13 @@ class PasteCleanPlugin implements RichContentPlugin
      */
     public function getTipTapJsExtensions(): array
     {
-        return [Assets::url('paste-clean', ['keep' => $this->getKeepLinkPrefixes()])];
+        $params = ['keep' => $this->getKeepLinkPrefixes()];
+
+        if ($this->isStrict()) {
+            $params['strict'] = ['1'];
+        }
+
+        return [Assets::url('paste-clean', $params)];
     }
 
     /**

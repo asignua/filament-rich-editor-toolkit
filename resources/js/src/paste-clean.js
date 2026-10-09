@@ -35,10 +35,18 @@
 // clean-format command keeps. Pasting never keeps any (the paste contract stays
 // the strictest one).
 //
+// Strict mode (`paste-clean.js?strict=1`, PasteCleanPlugin::strict()): after the cleanup the
+// paste is reduced to what the field's toolbar offers - see paste-strict.js for the mapping
+// and for how the toolbar is read. It also applies to a paste from INSIDE an editor (the
+// `data-pm-slice` cutoff above only skips the cleanup): the toolbar is the field's rule, and
+// two editors on one page may differ.
+//
 // IMPORTANT: `window` and `import.meta` are read ONLY inside the default-export
 // factory. Moving them to the top level would make the module unloadable under
 // `node --test`, and the whole suite would silently stop covering anything (a
 // dedicated test pins this).
+
+import { allowedFromToolbar, restrictToToolbar } from './paste-strict.js'
 
 // --- decision tables ----------------------------------------------------
 
@@ -1058,26 +1066,46 @@ const cleanSelectionMixedSlice = (state, DOMSerializer, PmDOMParser, keepLinkPre
 
 // --- Filament contract --------------------------------------------------
 
-// Reads the `keep` query parameters of this module's URL. import.meta is touched
-// only when the factory runs (see the header note); any failure means "no prefixes".
-const prefixesFromModuleUrl = () => {
+// Reads the query parameters of this module's URL: every `keep` (link prefixes) and `strict`.
+// import.meta is touched only when the factory runs (see the header note); any failure means
+// "no prefixes, not strict".
+const settingsFromModuleUrl = () => {
     try {
-        return new URL(import.meta.url).searchParams.getAll('keep')
+        const params = new URL(import.meta.url).searchParams
+
+        return { keepLinkPrefixes: params.getAll('keep'), strict: params.get('strict') === '1' }
     } catch {
-        return []
+        return { keepLinkPrefixes: [], strict: false }
     }
 }
 
 export default () => {
     const { Extension } = window.FilamentRichEditor.tiptap.core
     const { DOMSerializer, DOMParser: PmDOMParser } = window.FilamentRichEditor.tiptap.pmModel
-    const keepLinkPrefixes = prefixesFromModuleUrl()
+    const { keepLinkPrefixes, strict } = settingsFromModuleUrl()
+    let editorRef = null
+
+    // The field wrapper, from which the toolbar is read at paste time (the toolbar can change:
+    // Livewire re-renders it, conditional buttons).
+    const fieldRoot = () => {
+        const dom = editorRef && editorRef.view ? editorRef.view.dom : null
+
+        return dom && typeof dom.closest === 'function' ? dom.closest('.fi-fo-rich-editor') : null
+    }
 
     return Extension.create({
         name: 'asignuaPasteClean',
+        onCreate() {
+            editorRef = this.editor
+        },
+        onDestroy() {
+            editorRef = null
+        },
         transformPastedHTML(html) {
             try {
-                return cleanPastedHtml(html)
+                const cleaned = cleanPastedHtml(html)
+
+                return strict ? restrictToToolbar(cleaned, allowedFromToolbar(fieldRoot())) : cleaned
             } catch (error) {
                 // A throw here propagates through parseFromClipboard and KILLS
                 // the paste entirely, without any message. A dirty paste is

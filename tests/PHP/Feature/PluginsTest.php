@@ -9,8 +9,10 @@ use Asignua\RichEditorToolkit\Extensions\CustomAttributes;
 use Asignua\RichEditorToolkit\Extensions\CustomDivInline;
 use Asignua\RichEditorToolkit\Extensions\CustomSpan;
 use Asignua\RichEditorToolkit\Extensions\IframeNode;
+use Asignua\RichEditorToolkit\Plugins\CharacterCountPlugin;
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
+use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Asignua\RichEditorToolkit\Tests\TestCase;
@@ -27,7 +29,7 @@ class PluginsTest extends TestCase
 {
     public function test_every_plugin_implements_the_filament_contract(): void
     {
-        foreach ([PasteCleanPlugin::class, CustomAttributesPlugin::class, EmbedPlugin::class, ImageUrlPlugin::class] as $class) {
+        foreach ([PasteCleanPlugin::class, CustomAttributesPlugin::class, EmbedPlugin::class, ImageUrlPlugin::class, FullscreenPlugin::class, CharacterCountPlugin::class] as $class) {
             $this->assertInstanceOf(RichContentPlugin::class, $class::make());
         }
     }
@@ -204,9 +206,10 @@ class PluginsTest extends TestCase
 
         $this->assertStringContainsString('data-track', (string) json_encode($component->get('data')));
 
-        foreach (['custom-attributes.js', 'paste-clean.js', 'embed.js'] as $module) {
+        foreach (['custom-attributes.js', 'paste-clean.js', 'embed.js', 'fullscreen.js', 'character-count.js'] as $module) {
             $this->assertStringContainsString($module, $html);
         }
+        $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.fullscreen'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.clear_formatting'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.embed'), $html);
         $this->assertStringContainsString(__('rich-editor-toolkit::rich-editor-toolkit.image_url'), $html);
@@ -242,5 +245,81 @@ class PluginsTest extends TestCase
         Livewire::test(DemoForm::class)
             ->callAction(TestAction::make('imageUrl')->schemaComponent('body'), ['url' => '/a.png'])
             ->assertNotDispatched('run-rich-editor-commands');
+    }
+
+    public function test_paste_clean_is_strict_only_when_asked_or_configured(): void
+    {
+        $this->assertFalse(PasteCleanPlugin::make()->isStrict());
+        $this->assertStringNotContainsString('strict=', PasteCleanPlugin::make()->getTipTapJsExtensions()[0]);
+
+        $this->assertTrue(PasteCleanPlugin::make()->strict()->isStrict());
+        $this->assertStringContainsString('strict=1', PasteCleanPlugin::make()->strict()->getTipTapJsExtensions()[0]);
+        $this->assertStringNotContainsString('strict=', PasteCleanPlugin::make()->strict(false)->getTipTapJsExtensions()[0]);
+
+        config()->set('rich-editor-toolkit.paste_clean.strict', true);
+        $this->assertTrue(PasteCleanPlugin::make()->isStrict());
+        $this->assertStringContainsString('strict=1', PasteCleanPlugin::make()->getTipTapJsExtensions()[0]);
+        $this->assertFalse(PasteCleanPlugin::make()->strict(false)->isStrict());
+    }
+
+    public function test_strict_paste_reads_the_toolbar_so_the_rendered_markup_must_keep_its_shape(): void
+    {
+        // resources/js/src/paste-strict.js learns what the field offers from the Alpine class
+        // binding of every toolbar button: `isActive('<tiptap name>', <options>)`. If Filament
+        // changes that markup this fails, instead of strict paste silently turning itself off.
+        $this->actingAs(\Workbench\App\Models\User::factory()->create());
+
+        $html = html_entity_decode(Livewire::test(DemoForm::class)->html(), ENT_QUOTES);
+
+        foreach (['bold', 'link', 'bulletList', 'table'] as $name) {
+            $this->assertMatchesRegularExpression("/isActive\(\s*['\"]".$name."['\"]/", $html, $name);
+        }
+
+        // A heading's level travels as JSON, with the quotes written as \u0022 by Js::from().
+        $this->assertMatchesRegularExpression("/isActive\(\s*['\"]heading['\"].{0,160}?level(?:\\\\u0022|\\\\?['\"])?\s*:\s*2/s", $html);
+        $this->assertStringContainsString('fi-fo-rich-editor-toolbar', $html);
+        $this->assertStringContainsString('fi-fo-rich-editor', $html);
+    }
+
+    public function test_the_fullscreen_plugin_is_a_toggle_tool_without_a_server_half(): void
+    {
+        $plugin = FullscreenPlugin::make();
+        $tool = $plugin->getEditorTools()[0];
+
+        $this->assertSame([], $plugin->getTipTapPhpExtensions());
+        $this->assertSame([], $plugin->getEditorActions());
+        $this->assertSame('fullscreen', $tool->getName());
+        $this->assertTrue($tool->isToggle());
+        $this->assertSame(__('rich-editor-toolkit::rich-editor-toolkit.fullscreen'), (string) $tool->getLabel());
+        $this->assertStringContainsString('asignuaToggleFullscreen', (string) $tool->getJsHandler());
+        $this->assertStringContainsString('storage.asignuaFullscreen', (string) $tool->getActiveJsExpression());
+    }
+
+    public function test_the_fullscreen_module_gets_the_stylesheet_and_an_optional_z_index(): void
+    {
+        $url = FullscreenPlugin::make()->getTipTapJsExtensions()[0];
+
+        $this->assertStringContainsString('fullscreen.js', $url);
+        $this->assertStringContainsString('css='.rawurlencode(Assets::styleHref()), $url);
+        $this->assertStringContainsString('filament-rich-editor-toolkit-ui', Assets::styleHref());
+        $this->assertStringNotContainsString('z=', $url);
+
+        $this->assertStringContainsString('z=50', FullscreenPlugin::make()->zIndex(50)->getTipTapJsExtensions()[0]);
+
+        config()->set('rich-editor-toolkit.fullscreen.z_index', 44);
+        $this->assertStringContainsString('z=44', FullscreenPlugin::make()->getTipTapJsExtensions()[0]);
+        $this->assertNull(FullscreenPlugin::make()->zIndex(-1)->getZIndex());
+    }
+
+    public function test_the_ui_stylesheet_ships_and_covers_fullscreen_and_the_counter(): void
+    {
+        $css = (string) file_get_contents(__DIR__.'/../../../resources/dist/'.Assets::UI_STYLESHEET.'.css');
+
+        $this->assertStringContainsString('.fi-fo-rich-editor.asignua-rte-fullscreen', $css);
+        $this->assertStringContainsString('position: fixed', $css);
+        $this->assertStringContainsString('--asignua-rte-fullscreen-z, 35', $css);
+        $this->assertStringContainsString('html.asignua-rte-fullscreen-lock', $css);
+        $this->assertStringContainsString("[data-state='over']", $css);
+        $this->assertStringContainsString('.dark .asignua-rte-count', $css);
     }
 }

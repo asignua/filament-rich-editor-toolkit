@@ -1,0 +1,68 @@
+{
+    "_comment": "Shared by tests/PHP/Unit/PlainTextTest.php and tests/js/character-count.test.mjs: the PHP rule and the JS counter must give these exact numbers. A case has html or json (or both) and the expected counts.",
+    "cases": [
+        {"name": "plain paragraph", "html": "<p>Hello</p>", "characters": 5, "words": 1},
+        {"name": "markup is not counted", "html": "<p class=\"lead\" style=\"color:red\"><strong>Hello</strong> <em>world</em></p>", "characters": 11, "words": 2},
+        {"name": "two paragraphs, runs of spaces collapse", "html": "<p>Hello world</p><p>Second   line</p>", "characters": 22, "words": 4},
+        {"name": "heading and list", "html": "<h2>Title</h2><ul><li>One</li><li>Two words</li></ul>", "characters": 17, "words": 4},
+        {"name": "list items with paragraphs", "html": "<ol><li><p>One</p></li><li><p>Two words</p></li></ol>", "characters": 12, "words": 3},
+        {"name": "hard break is free", "html": "<p>Line one<br>line two</p>", "characters": 16, "words": 4},
+        {"name": "space after a hard break is dropped", "html": "<p>a <br> b</p>", "characters": 3, "words": 2},
+        {"name": "entities", "html": "<p>Tom &amp; Jerry &lt;3</p>", "characters": 14, "words": 4},
+        {"name": "no-break space is a character and separates words", "html": "<p>10&nbsp;UAH</p>", "characters": 6, "words": 2},
+        {"name": "unicode code points, not bytes or UTF-16 units", "html": "<p>Привіт, світе! 😀</p>", "characters": 16, "words": 3},
+        {"name": "table cells", "html": "<table><tbody><tr><td><p>A</p></td><td><p>B C</p></td></tr></tbody></table>", "characters": 4, "words": 3},
+        {"name": "code block keeps its lines, line breaks are free", "html": "<pre><code>line1\nline2</code></pre>", "characters": 10, "words": 2},
+        {"name": "blockquote", "html": "<blockquote><p>Quote</p></blockquote><p>After</p>", "characters": 10, "words": 2},
+        {"name": "atoms add nothing, the spaces around them stay", "html": "<p>Hi <span data-type=\"mention\" data-id=\"1\">@Ann</span> there</p>", "characters": 9, "words": 2},
+        {"name": "a custom block preview is not text", "html": "<p>Before</p><div data-type=\"customBlock\" data-id=\"video\"><p>preview text</p></div><p>After</p>", "characters": 11, "words": 2},
+        {"name": "an image adds nothing", "html": "<p>Look <img src=\"/a.png\" alt=\"alt text\"> here</p>", "characters": 10, "words": 2},
+        {"name": "empty paragraph", "html": "<p></p>", "characters": 0, "words": 0},
+        {"name": "only an image", "html": "<p><img src=\"/a.png\"></p>", "characters": 0, "words": 0},
+        {
+            "name": "tiptap json",
+            "json": {
+                "type": "doc",
+                "content": [
+                    {"type": "paragraph", "content": [
+                        {"type": "text", "text": "Hello "},
+                        {"type": "text", "marks": [{"type": "bold"}], "text": "bold"},
+                        {"type": "hardBreak"},
+                        {"type": "text", "text": "next"}
+                    ]},
+                    {"type": "paragraph"},
+                    {"type": "bulletList", "content": [
+                        {"type": "listItem", "content": [
+                            {"type": "paragraph", "content": [{"type": "text", "text": "Item one"}]}
+                        ]}
+                    ]}
+                ]
+            },
+            "characters": 22,
+            "words": 5
+        },
+        {
+            "name": "the same document as html and json",
+            "html": "<p>Hello <strong>bold</strong><br>next</p><p></p><ul><li><p>Item one</p></li></ul>",
+            "json": {
+                "type": "doc",
+                "content": [
+                    {"type": "paragraph", "content": [
+                        {"type": "text", "text": "Hello "},
+                        {"type": "text", "marks": [{"type": "bold"}], "text": "bold"},
+                        {"type": "hardBreak"},
+                        {"type": "text", "text": "next"}
+                    ]},
+                    {"type": "paragraph"},
+                    {"type": "bulletList", "content": [
+                        {"type": "listItem", "content": [
+                            {"type": "paragraph", "content": [{"type": "text", "text": "Item one"}]}
+                        ]}
+                    ]}
+                ]
+            },
+            "characters": 22,
+            "words": 5
+        }
+    ]
+}

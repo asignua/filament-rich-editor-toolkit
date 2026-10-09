@@ -6,6 +6,7 @@ namespace Workbench\App\Livewire;
 
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
+use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Filament\Actions\Concerns\InteractsWithActions;
@@ -43,11 +44,19 @@ class DemoForm extends Component implements HasActions, HasForms
                         CustomAttributesPlugin::make(),
                         EmbedPlugin::make(),
                         ImageUrlPlugin::make(),
-                        PasteCleanPlugin::make(),
+                        PasteCleanPlugin::make()->strict(),
+                        FullscreenPlugin::make(),
                     ])
-                    ->toolbarButtons([['bold', 'cleanFormat', 'embed', 'imageUrl']]),
+                    ->textLength(max: 500, maxWords: 80) // @phpstan-ignore method.notFound (macro)
+                    ->toolbarButtons([['bold', 'link', 'h2', 'bulletList', 'table', 'cleanFormat', 'embed', 'imageUrl', 'fullscreen']]),
             ])
             ->statePath('data');
+    }
+
+    public function submit(): void
+    {
+        // @phpstan-ignore property.notFound (magic $form from InteractsWithForms)
+        $this->form->getState();
     }
 
     public function render(): View

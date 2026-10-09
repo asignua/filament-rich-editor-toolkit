@@ -73,6 +73,40 @@ return [
 
     'paste_clean' => [
         'keep_link_prefixes' => [],
+
+        // Strict paste: reduce a paste to what the field's toolbar offers (no table button ->
+        // tables become paragraphs, no heading button -> paragraphs, no bold button -> bold is
+        // unwrapped, ...). A per-field `PasteCleanPlugin::make()->strict()` overrides this.
+        'strict' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Character counter
+    |--------------------------------------------------------------------------
+    |
+    | `warn_at`: the share of a limit (0 to 1] from which CharacterCountPlugin's counter turns
+    | amber; above the limit it turns red. A per-field `->warnAt()` overrides it.
+    |
+    */
+
+    'character_count' => [
+        'warn_at' => 0.9,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Fullscreen
+    |--------------------------------------------------------------------------
+    |
+    | `z_index`: the z-index of the fullscreen overlay. null keeps the stylesheet's 35, which is
+    | above Filament's topbar and sidebar (30) and below its modals (40) so that dialogs opened
+    | from the fullscreen toolbar stay on top. A per-field `->zIndex()` overrides it.
+    |
+    */
+
+    'fullscreen' => [
+        'z_index' => null,
     ],
 
     /*

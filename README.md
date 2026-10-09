@@ -9,15 +9,17 @@
 
 <img class="filament-hidden" src="https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.0.0/art/cover.jpg" alt="Filament Rich Editor Toolkit">
 
-Five free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
+Seven free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
 reporting in Filament's GitHub Help:
 
 | Plugin | Fixes |
 | --- | --- |
-| `PasteCleanPlugin` | Pasting from Word / Google Docs drags in colours, fonts, `mso-*` junk and `<span style>` soup. |
+| `PasteCleanPlugin` | Pasting from Word / Google Docs drags in colours, fonts, `mso-*` junk and `<span style>` soup; optionally a paste is cut down to what the field's toolbar offers ([#20484](https://github.com/filamentphp/filament/discussions/20484), [#20048](https://github.com/filamentphp/filament/discussions/20048)). |
 | `CustomAttributesPlugin` | `class`, `id`, `style` and `data-*` written in the source view are silently stripped, in the browser **and** on the server. |
 | `EmbedPlugin` | `<iframe>` / video embeds are removed by the schema and the sanitizer. |
 | `ImageUrlPlugin` | No way to insert an image that lives on another site. |
+| `FullscreenPlugin` | No fullscreen mode for long content. |
+| `CharacterCountPlugin` + `RichTextLength` | No counter; limits that count HTML tags, or only characters, not the text the reader sees. |
 | `StickyToolbarPlugin` | The toolbar scrolls away on long content ([#17391](https://github.com/filamentphp/filament/discussions/17391), [#16919](https://github.com/filamentphp/filament/discussions/16919), [#11685](https://github.com/filamentphp/filament/discussions/11685)). |
 
 Each plugin works alone; take only what you need.
@@ -69,6 +71,7 @@ php artisan vendor:publish --tag=filament-rich-editor-toolkit-translations
 ```php
 use Asignua\RichEditorToolkit\Plugins\CustomAttributesPlugin;
 use Asignua\RichEditorToolkit\Plugins\EmbedPlugin;
+use Asignua\RichEditorToolkit\Plugins\FullscreenPlugin;
 use Asignua\RichEditorToolkit\Plugins\ImageUrlPlugin;
 use Asignua\RichEditorToolkit\Plugins\PasteCleanPlugin;
 use Filament\Forms\Components\RichEditor;
@@ -79,16 +82,18 @@ RichEditor::make('body')
         CustomAttributesPlugin::make(),
         EmbedPlugin::make(),
         ImageUrlPlugin::make(),
+        FullscreenPlugin::make(),
     ])
+    ->textLength(max: 5000, maxWords: 800) // validation rule + counter
     ->toolbarButtons([
         ['bold', 'italic', 'link', 'cleanFormat'],
         ['h2', 'h3', 'bulletList', 'orderedList'],
-        ['embed', 'imageUrl'],
+        ['embed', 'imageUrl', 'fullscreen'],
     ]);
 ```
 
-A toolbar button is shown only when it is listed in `toolbarButtons()` (`cleanFormat`, `embed`, `imageUrl`); an unknown
-name makes Filament throw, so list only the plugins you installed.
+A toolbar button is shown only when it is listed in `toolbarButtons()` (`cleanFormat`, `embed`, `imageUrl`,
+`fullscreen`); an unknown name makes Filament throw, so list only the plugins you installed.
 
 ### PasteCleanPlugin
 
@@ -113,6 +118,38 @@ PasteCleanPlugin::make()->keepLinkPrefixes(['/internal-link/'])
 
 Images pasted from Word and Google Docs are removed (Filament uploads only `data:` images from the clipboard); add them
 through the upload button.
+
+#### Strict paste
+
+Filament always loads the **whole** TipTap schema, whatever `toolbarButtons()` says: a field with only a Bold button
+still accepts a pasted table, an `<h1>` and links. Strict mode cuts a paste down to what the field's toolbar offers:
+
+```php
+PasteCleanPlugin::make()->strict()
+```
+
+or for every field with the plugin, `'paste_clean' => ['strict' => true]` in the config (a field's own `strict(false)`
+wins). What happens without the matching button:
+
+| Pasted | Without the button |
+| --- | --- |
+| table | each cell becomes a paragraph (`table`) |
+| `<h1>`-`<h6>` | a paragraph if no heading button exists at all; otherwise the **nearest** offered level, and on a tie the deeper one (`h2`/`h4` offered, `h3` pasted: `h4`: a heading is demoted, never promoted) |
+| lists | items become paragraphs (`bulletList` and `orderedList` both missing); with only one of them the other kind is converted to it |
+| blockquote, code block, horizontal rule | paragraphs, paragraphs (lines kept as line breaks), removed |
+| bold, italic, underline, strike, subscript, superscript, code, highlight, link | unwrapped: the text stays |
+
+Images, embeds, custom blocks, grid, details and mentions have no toolbar-controlled counterpart here and are left alone.
+Strict mode also applies to a paste from **inside** an editor (the `data-pm-slice` cutoff only skips the cleanup): the
+toolbar is the field's rule, and two editors on a page may differ. When it changes such a paste it drops the slice
+marker, because the marker describes the structure it changed.
+
+How the browser knows the toolbar: a plugin cannot see the field, so the module **reads the rendered toolbar**. Every
+stock button carries the TipTap name it toggles in its Alpine class binding (`isActive('bold', [])`); that is the
+vocabulary needed here, it does not depend on the translated label, and dropdown groups and floating toolbars are read
+the same way. A test pins the markup shape, so a Filament change fails the suite instead of silently turning strict
+off. If the toolbar cannot be read (none rendered, no recognisable button) nothing is restricted: "cannot tell" never
+means "strip everything". Keyboard shortcuts (Ctrl+B) are not a paste and are untouched.
 
 ### CustomAttributesPlugin
 
@@ -169,6 +206,67 @@ Inserts an `<img>` that is loaded from the other site, not copied. Only absolute
 an `<img>` typed in the source view or pasted is not checked against it. `http://` is accepted (mixed content on an
 https site).
 
+### FullscreenPlugin
+
+A toolbar button that turns the field into a full-viewport overlay and back:
+
+```php
+RichEditor::make('body')
+    ->plugins([FullscreenPlugin::make()])
+    ->toolbarButtons([['bold', 'link', 'fullscreen']]);
+```
+
+Esc leaves; the page scroll is locked while it is on and restored on exit; the toolbar stays on top while the content
+scrolls; a field's own `maxHeight()`/`minHeight()` are ignored in fullscreen. The button is a toggle (`aria-pressed`,
+active style). It works inside sections, tabs, repeaters and modals, in a panel or in a plain Livewire form, with or
+without `StickyToolbarPlugin`: the module links its own small stylesheet (`php artisan filament:assets` publishes it).
+
+The overlay is a fixed element at `z-index: 35`: above Filament's topbar and sidebar (30), **below its modals (40)**, so
+the link, embed and image dialogs opened from the fullscreen toolbar still open on top. Change it with
+`FullscreenPlugin::make()->zIndex(50)`, the `fullscreen.z_index` config or the `--asignua-rte-fullscreen-z` variable.
+Esc is left to a modal that does not hold the editor, to an open toolbar dropdown and to any handler that already
+called `preventDefault()`.
+
+### CharacterCountPlugin and RichTextLength
+
+A counter under the editor and a validation rule that count the **plain text**, the same way:
+
+```php
+RichEditor::make('body')->textLength(max: 500, maxWords: 80, min: 20);
+```
+
+`textLength()` is a macro that adds the rule **and** the counter (`counter: false` for the rule alone,
+`showWords: true` to show the word count without a word limit). Plugins added with `plugins()` are appended, so it
+composes with the ones you already set. Without the macro:
+
+```php
+RichEditor::make('body')
+    ->plugins([CharacterCountPlugin::make()->maxCharacters(500)->maxWords(80)->warnAt(0.9)])
+    ->rule(new RichTextLength(max: 500, maxWords: 80, min: 20));
+```
+
+The counter shows "Characters: 123 / 500 · Words: 20 / 80", turns amber from `warnAt()` (default 90% of a limit) and red
+above it, and tells screen readers once when it flips to "limit exceeded" (the visible number is not a live region). It
+only displays: it never blocks typing and the browser is not trusted; the rule is the enforcement. Translatable
+messages (`text_length_max`, `text_length_min`, `text_length_max_words`).
+
+What is counted (one definition, implemented in JS and in `Support\PlainText`, and tested against shared fixtures on both
+sides):
+
+- text blocks (paragraphs, headings, list items, table cells, code blocks) joined by a newline; a hard break is a
+  newline; empty blocks dropped;
+- **characters** are Unicode code points with spaces; paragraph and line breaks are not counted;
+- **words** are runs of non-whitespace; a no-break space and the other Unicode spaces separate words;
+- images, embeds, custom blocks and mentions add nothing.
+
+The rule accepts an HTML string or the TipTap JSON of a `->json()` field. Null, `''` and a document with no text pass,
+like Laravel's own size rules: an empty document is `required`'s business, so an optional field that holds `<p></p>`
+can still be saved empty even with `min`.
+
+Why not `maxLength()`: earlier Filament 5.x releases validated the raw HTML string (`<p>Hello</p>` was 12 characters,
+[#17028](https://github.com/filamentphp/filament/issues/17028)); newer ones count tiptap-php's `getText()`. Either
+way it has no counter, no word limit and its number is not the one shown in the editor.
+
 ### StickyToolbarPlugin
 
 A panel plugin, CSS only:
@@ -217,8 +315,8 @@ to the renderer**: the cleanup happens once, at paste time.
 
 ## Configuration
 
-See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attributes`, `types`, `embed`, `paste_clean`,
-`sticky_toolbar`.
+See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attributes`, `types`, `embed`, `paste_clean`
+(`keep_link_prefixes`, `strict`), `character_count` (`warn_at`), `fullscreen` (`z_index`), `sticky_toolbar`.
 
 ## Gotchas
 
@@ -233,7 +331,14 @@ See [`config/rich-editor-toolkit.php`](config/rich-editor-toolkit.php): `attribu
 - **The sanitizer is the toolkit's own.** Allowances apply only to `RichEditorToolkit::renderer()` and
   `RichEditorToolkit::toHtml()`; a plain `RichContentRenderer::toHtml()` and every `->html()` column still drop
   `<iframe>` and the extra attributes.
-- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl` only when the matching plugin is registered.
+- **`toolbarButtons()`.** List `cleanFormat`, `embed`, `imageUrl`, `fullscreen` only when the matching plugin is registered.
+- **Fullscreen is a fixed overlay, not the top layer.** The top layer would paint above Filament's modals and hide the
+  dialogs opened from the toolbar. The price: an ancestor with `transform`, `filter` or `contain` makes `position: fixed`
+  fill that ancestor instead of the screen. `overflow` on a section, tab or repeater does not clip it.
+- **Counter and rule are separate.** The counter does not validate and the rule does not draw anything; `textLength()`
+  adds both. A browser can be bypassed, so keep the rule.
+- **Strict paste is about pastes.** It does not unformat existing content and does not stop Ctrl+B; the `cleanFormat`
+  button and the schema are unchanged. It is off by default.
 
 ## Translations
 

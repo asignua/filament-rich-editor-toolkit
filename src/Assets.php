@@ -19,7 +19,13 @@ final class Assets
 {
     public const string PACKAGE = 'asignua/filament-rich-editor-toolkit';
 
-    public const array MODULES = ['paste-clean', 'custom-attributes', 'embed'];
+    public const array MODULES = ['paste-clean', 'custom-attributes', 'embed', 'fullscreen', 'character-count'];
+
+    /**
+     * The stylesheet of the fullscreen overlay and the counter. The two JS modules link it
+     * themselves ({@see self::styleHref()}), so it works with or without StickyToolbarPlugin.
+     */
+    public const string UI_STYLESHEET = 'filament-rich-editor-toolkit-ui';
 
     /**
      * @return list<Js>
@@ -30,6 +36,14 @@ final class Assets
             static fn (string $name): Js => Js::make($name, __DIR__.'/../resources/dist/'.$name.'.js')->loadedOnRequest(),
             self::MODULES,
         );
+    }
+
+    /**
+     * The published URL of the UI stylesheet, for the modules to link.
+     */
+    public static function styleHref(): string
+    {
+        return FilamentAsset::getStyleHref(self::UI_STYLESHEET, self::PACKAGE);
     }
 
     /**

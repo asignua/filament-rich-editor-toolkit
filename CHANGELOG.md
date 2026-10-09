@@ -2,6 +2,15 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
+## Unreleased
+
+- `FullscreenPlugin`: a `fullscreen` toolbar button that turns the field into a full-viewport overlay and back. Esc leaves, the page scroll is locked and restored, the toolbar stays on top, `aria-pressed` follows the state. A fixed overlay at `z-index: 35` (above the topbar and sidebar, below Filament's modals so toolbar dialogs stay on top), configurable with `zIndex()`, `fullscreen.z_index` or `--asignua-rte-fullscreen-z`. Works in sections, tabs, repeaters, modals and plain Livewire forms.
+- `CharacterCountPlugin`: a counter under the editor ("Characters: 123 / 500 · Words: 20 / 80") on the plain text, amber from `warnAt()` (`character_count.warn_at`, default 90%), red over the limit, with a one-time screen reader announcement when the limit is exceeded.
+- `Rules\RichTextLength` (min/max characters, max words) and the `RichEditor::textLength(max:, maxWords:, min:, counter:, showWords:)` macro that adds the rule and the counter. Both count the same plain text (`Support\PlainText` in PHP, `character-count.js` in the browser), from an HTML string or TipTap JSON, pinned by shared fixtures on both sides. Translatable messages.
+- `PasteCleanPlugin::strict()` / `paste_clean.strict` (off by default): a paste is reduced to what the field's toolbar offers (no table button: tables become paragraphs; no heading button: paragraphs, a missing level moves to the nearest offered one; no list button: paragraphs; marks without a button are unwrapped). The module reads the rendered toolbar, so no macro or extra configuration is needed. Applies to a paste from inside an editor too. Filament discussions #20484, #20048.
+- A new stylesheet, `filament-rich-editor-toolkit-ui.css`, loaded on request by the fullscreen and counter modules (no `StickyToolbarPlugin` needed). Run `php artisan filament:assets` after upgrading.
+- Translations (all 10 languages): `fullscreen`, `characters_count`, `characters_count_max`, `words_count`, `words_count_max`, `characters_over`, `words_over`, `text_length_max`, `text_length_min`, `text_length_max_words`.
+
 ## v1.0.2 - 2026-10-08
 
 - Dependencies: jsdom 30, esbuild 0.28 (dev); the built assets are unchanged.
