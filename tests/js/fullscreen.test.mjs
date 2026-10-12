@@ -282,3 +282,177 @@ test('paramsOf reads a module URL and survives garbage', () => {
     assert.equal(paramsOf('https://x.test/a.js?z=40&css=%2Fa.css').get('z'), '40')
     assert.equal(paramsOf('not a url').get('z'), null)
 })
+
+test('Esc typed inside the editor leaves fullscreen although ProseMirror prevents it', () => {
+    const window = page()
+    const root = window.document.getElementById('root')
+    root.insertAdjacentHTML('beforeend', '<div class="tiptap ProseMirror" contenteditable="true"><p id="text">Hi</p></div>')
+    const editor = root.querySelector('.ProseMirror')
+    const fullscreen = createFullscreen(root, { win: window, doc: window.document })
+
+    // ProseMirror's captureKeyDown: preventDefault() on every Esc in a focused editor.
+    editor.addEventListener('keydown', (event) => event.key === 'Escape' && event.preventDefault())
+
+    fullscreen.enter()
+    window.document.getElementById('text').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    assert.equal(fullscreen.isActive(), false)
+})
+
+test('Esc that closes a mention / merge-tag suggestion list keeps fullscreen', () => {
+    const window = page()
+    const root = window.document.getElementById('root')
+    root.insertAdjacentHTML('beforeend', '<div class="tiptap ProseMirror" contenteditable="true"><p id="text">@ma</p></div>')
+    const editor = root.querySelector('.ProseMirror')
+    const fullscreen = createFullscreen(root, { win: window, doc: window.document })
+
+    // Filament's suggestion list lives on <body> and removes itself on Esc, before the event bubbles up.
+    window.document.body.insertAdjacentHTML('beforeend', '<div class="fi-dropdown-panel fi-dropdown-list" id="list"></div>')
+    editor.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            window.document.getElementById('list')?.remove()
+            event.preventDefault()
+        }
+    })
+
+    fullscreen.enter()
+    const press = () =>
+        window.document.getElementById('text').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    press()
+    assert.equal(fullscreen.isActive(), true, 'the first Esc belonged to the list')
+
+    press()
+    assert.equal(fullscreen.isActive(), false, 'the next one leaves fullscreen')
+})
+
+test('a prevented Esc from outside the editor is still left alone', () => {
+    const window = page('<input id="other">')
+    const root = window.document.getElementById('root')
+    const other = window.document.getElementById('other')
+    const fullscreen = createFullscreen(root, { win: window, doc: window.document })
+
+    other.addEventListener('keydown', (event) => event.preventDefault())
+
+    fullscreen.enter()
+    other.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+
+    assert.equal(fullscreen.isActive(), true)
+})
+
+test('onEscape runs only when Esc left fullscreen, so the toolbar button can follow', () => {
+    const window = page()
+    const root = window.document.getElementById('root')
+    let calls = 0
+    const fullscreen = createFullscreen(root, { win: window, doc: window.document, onEscape: () => calls++ })
+
+    keydown(window, 'Escape')
+    assert.equal(calls, 0, 'not in fullscreen')
+
+    fullscreen.enter()
+    fullscreen.exit()
+    assert.equal(calls, 0, 'the button / exit() path does not call it')
+
+    fullscreen.enter()
+    keydown(window, 'Escape')
+    assert.equal(fullscreen.isActive(), false)
+    assert.equal(calls, 1)
+})
+
+// --- Livewire morph ---------------------------------------------------------------------------
+
+const fakeLivewire = (window) => {
+    const hooks = []
+
+    window.Livewire = {
+        hook(name, callback) {
+            const entry = { name, callback }
+
+            hooks.push(entry)
+
+            return () => hooks.splice(hooks.indexOf(entry), 1)
+        },
+    }
+
+    return { hooks, morph: (el) => hooks.filter((h) => h.name === 'morph.updated').forEach((h) => h.callback({ el })) }
+}
+
+test('a Livewire morph that strips the wrapper gets the fullscreen marks back; leaving unregisters', () => {
+    const window = page()
+    const { hooks, morph } = fakeLivewire(window)
+    const root = window.document.getElementById('root')
+    const parent = window.document.getElementById('parent')
+    const fullscreen = createFullscreen(root, { win: window, doc: window.document, z: 50 })
+
+    root.getBoundingClientRect = () => ({ height: 320 })
+    assert.equal(hooks.length, 0)
+    fullscreen.enter()
+    assert.equal(hooks.length, 1)
+    assert.equal(hooks[0].name, 'morph.updated')
+
+    root.className = 'fi-fo-rich-editor'
+    root.removeAttribute('style')
+    parent.style.minHeight = ''
+    morph(root)
+
+    assert.ok(root.classList.contains(ACTIVE_CLASS))
+    assert.equal(root.style.getPropertyValue('--asignua-rte-fullscreen-z'), '50')
+    assert.equal(parent.style.minHeight, '320px')
+
+    // The parent morphed on its own, an unrelated element does nothing.
+    parent.style.minHeight = ''
+    morph(window.document.body.appendChild(window.document.createElement('p')))
+    assert.equal(parent.style.minHeight, '')
+    morph(parent)
+    assert.equal(parent.style.minHeight, '320px')
+
+    fullscreen.exit()
+    assert.equal(hooks.length, 0)
+    assert.equal(parent.style.minHeight, '')
+    morph(root)
+    assert.ok(!root.classList.contains(ACTIVE_CLASS))
+})
+
+test('destroy unregisters the morph hook', () => {
+    const window = page()
+    const { hooks } = fakeLivewire(window)
+    const fullscreen = createFullscreen(window.document.getElementById('root'), { win: window, doc: window.document })
+
+    fullscreen.enter()
+    fullscreen.destroy()
+    assert.equal(hooks.length, 0)
+})
+
+test('without Livewire nothing breaks; Livewire that loads later is picked up on livewire:init, once', () => {
+    const window = page()
+    const root = window.document.getElementById('root')
+    const fullscreen = createFullscreen(root, { win: window, doc: window.document })
+
+    root.getBoundingClientRect = () => ({ height: 10 })
+    fullscreen.enter()
+
+    const { hooks, morph } = fakeLivewire(window)
+
+    window.document.dispatchEvent(new window.Event('livewire:init'))
+    window.document.dispatchEvent(new window.Event('livewire:init'))
+    assert.equal(hooks.length, 1)
+
+    root.className = 'fi-fo-rich-editor'
+    morph(root)
+    assert.ok(root.classList.contains(ACTIVE_CLASS))
+
+    fullscreen.exit()
+    assert.equal(hooks.length, 0)
+
+    // Left before Livewire appeared: the late init attaches nothing.
+    const w2 = page()
+    const f2 = createFullscreen(w2.document.getElementById('root'), { win: w2, doc: w2.document })
+
+    f2.enter()
+    f2.exit()
+
+    const late = fakeLivewire(w2)
+
+    w2.document.dispatchEvent(new w2.Event('livewire:init'))
+    assert.equal(late.hooks.length, 0)
+})

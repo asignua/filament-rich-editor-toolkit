@@ -10,6 +10,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // `testbench serve` brings its own users table.
+        if (Schema::hasTable('users')) {
+            return;
+        }
+
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->string('name');

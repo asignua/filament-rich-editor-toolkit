@@ -1,0 +1,51 @@
+# Try the toolkit by hand:  vendor/bin/testbench workbench:build && vendor/bin/testbench filament:assets
+# then  vendor/bin/testbench serve --host=0.0.0.0  and log in at /admin as demo@example.com / password.
+providers:
+  - Filament\Actions\ActionsServiceProvider
+  - BladeUI\Heroicons\BladeHeroiconsServiceProvider
+  - BladeUI\Icons\BladeIconsServiceProvider
+  - Filament\FilamentServiceProvider
+  - Filament\Forms\FormsServiceProvider
+  - Filament\Infolists\InfolistsServiceProvider
+  - Livewire\LivewireServiceProvider
+  - Filament\Notifications\NotificationsServiceProvider
+  - Filament\Schemas\SchemasServiceProvider
+  - Filament\Support\SupportServiceProvider
+  - Filament\Tables\TablesServiceProvider
+  - Filament\Widgets\WidgetsServiceProvider
+  - RyanChandler\BladeCaptureDirective\BladeCaptureDirectiveServiceProvider
+  - Asignua\RichEditorToolkit\RichEditorToolkitServiceProvider
+  - Workbench\App\Providers\AdminPanelProvider
+
+migrations:
+  - workbench/database/migrations
+
+seeders:
+  - Workbench\Database\Seeders\DatabaseSeeder
+
+env:
+  APP_KEY: base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
+  AUTH_MODEL: Workbench\App\Models\User
+  DB_CONNECTION: sqlite
+  SESSION_DRIVER: file
+  QUEUE_CONNECTION: sync
+  BROADCAST_CONNECTION: "null"
+  FILESYSTEM_DISK: public
+
+workbench:
+  start: /admin
+  install: true
+  discovers:
+    web: false
+    api: false
+    commands: false
+    components: false
+    views: false
+  build:
+    - asset-publish
+    - create-sqlite-db
+    - db-wipe
+    - migrate-fresh
+  assets:
+    - laravel-assets
+  sync: []

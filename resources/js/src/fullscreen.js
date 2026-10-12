@@ -19,19 +19,29 @@
 // preventDefault(). When it does leave, it stops the event there, so that an editor inside a modal
 // does not close the modal with the same key press.
 //
+// A Livewire round trip of the component that holds the editor morphs the wrapper back to the
+// server markup and strips what we added (the class, the inline `--asignua-rte-fullscreen-z`, the
+// parent's `min-height`) while the page lock and the button stay pressed. While active, the
+// factory therefore listens to Livewire's `morph.updated` hook (livewire-morph.js) and puts those
+// three back whenever the wrapper, its parent or something inside was morphed. The morph itself is
+// never touched.
+//
 // Configuration comes from the query string of this module's URL: `css` (the UI stylesheet,
 // linked once) and `z` (an integer, sets --asignua-rte-fullscreen-z on the wrapper).
 //
 // IMPORTANT: `window` and `import.meta` are read ONLY inside the default-export factory.
 
 import { ensureStylesheet, paramsOf } from './ui-style.js'
+import { onMorphed, touches } from './livewire-morph.js'
 
 export const ACTIVE_CLASS = 'asignua-rte-fullscreen'
 export const LOCK_CLASS = 'asignua-rte-fullscreen-lock'
 
 /**
  * @param {Element} root the field wrapper
- * @param {{z?: number|null, win?: Window, doc?: Document}} options
+ * @param {{z?: number|null, win?: Window, doc?: Document, onEscape?: () => void}} options
+ *   `onEscape` runs after Esc left fullscreen: the toolbar learns about it only from an editor
+ *   transaction, which a key handler outside the editor does not produce.
  */
 export const createFullscreen = (root, options = {}) => {
     const win = options.win || globalThis.window
@@ -40,14 +50,37 @@ export const createFullscreen = (root, options = {}) => {
     let scroll = null
     let parentMinHeight = null
     let listener = null
+    let offMorph = null
+    let placeholder = null
 
     const otherModalIsOpen = () =>
         Array.from(doc.querySelectorAll('.fi-modal.fi-modal-open')).some((modal) => !modal.contains(root))
 
     const dropdownIsOpen = () => root.querySelector('[aria-expanded="true"]') !== null
 
+    // ProseMirror calls preventDefault() on EVERY Esc pressed inside a focused editor (its
+    // captureKeyDown treats Esc like Enter), so `defaultPrevented` alone would make Esc dead while
+    // typing. A prevented Esc from our own editor is still ours, unless a mention / merge-tag
+    // suggestion list was open: that list takes the Esc and removes itself before we see the
+    // event, so whether it was open is recorded in the capture phase, ahead of ProseMirror.
+    let suggestionWasOpen = false
+
+    const suggestionIsOpen = () => doc.querySelector('body > .fi-dropdown-panel.fi-dropdown-list') !== null
+
+    const onKeydownCapture = (event) => {
+        if (event.key === 'Escape') {
+            suggestionWasOpen = suggestionIsOpen()
+        }
+    }
+
+    const preventedByOwnEditor = (event) =>
+        !suggestionWasOpen &&
+        event.target instanceof win.Element &&
+        root.contains(event.target) &&
+        event.target.closest('.ProseMirror') !== null
+
     const onKeydown = (event) => {
-        if (event.key !== 'Escape' || event.defaultPrevented) {
+        if (event.key !== 'Escape' || (event.defaultPrevented && !preventedByOwnEditor(event))) {
             return
         }
 
@@ -62,6 +95,29 @@ export const createFullscreen = (root, options = {}) => {
         // after `document`, where this handler sits), losing the dialog's unsaved form.
         event.stopPropagation()
         api.exit()
+        options.onEscape?.()
+    }
+
+    const applyMarks = () => {
+        if (Number.isInteger(options.z)) {
+            root.style.setProperty('--asignua-rte-fullscreen-z', String(options.z))
+        }
+
+        root.classList.add(ACTIVE_CLASS)
+
+        const parent = root.parentElement
+
+        if (parent && placeholder) {
+            parent.style.minHeight = placeholder
+        }
+    }
+
+    // Livewire morphed something around the editor: put our marks back (idempotent).
+    const onMorph = ({ el }) => {
+        if (active && touches(root, el)) {
+            applyMarks()
+            doc.documentElement.classList.add(LOCK_CLASS)
+        }
     }
 
     const api = {
@@ -79,7 +135,8 @@ export const createFullscreen = (root, options = {}) => {
 
             if (parent) {
                 parentMinHeight = { value: parent.style.minHeight }
-                parent.style.minHeight = `${root.getBoundingClientRect().height}px`
+                placeholder = `${root.getBoundingClientRect().height}px`
+                parent.style.minHeight = placeholder
             }
 
             if (Number.isInteger(options.z)) {
@@ -88,7 +145,9 @@ export const createFullscreen = (root, options = {}) => {
 
             root.classList.add(ACTIVE_CLASS)
             doc.documentElement.classList.add(LOCK_CLASS)
+            offMorph = onMorphed(win, onMorph)
             listener = onKeydown
+            doc.addEventListener('keydown', onKeydownCapture, true)
             doc.addEventListener('keydown', listener)
 
             return true
@@ -99,8 +158,12 @@ export const createFullscreen = (root, options = {}) => {
             }
 
             active = false
+            offMorph?.()
+            offMorph = null
+            placeholder = null
             root.classList.remove(ACTIVE_CLASS)
             doc.documentElement.classList.remove(LOCK_CLASS)
+            doc.removeEventListener('keydown', onKeydownCapture, true)
             doc.removeEventListener('keydown', listener)
             listener = null
 
@@ -147,7 +210,17 @@ export default () => {
             const root = this.editor.view.dom.closest('.fi-fo-rich-editor')
 
             if (root) {
-                fullscreen = createFullscreen(root, { z })
+                fullscreen = createFullscreen(root, {
+                    z,
+                    onEscape: () => {
+                        this.storage.active = false
+
+                        // Same marker transaction as the command: re-evaluates the button's pressed state.
+                        if (!this.editor.isDestroyed) {
+                            this.editor.view.dispatch(this.editor.state.tr.setMeta('asignuaFullscreen', false))
+                        }
+                    },
+                })
             }
         },
         onDestroy() {

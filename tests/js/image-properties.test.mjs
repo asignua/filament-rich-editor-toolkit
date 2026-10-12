@@ -308,13 +308,13 @@ test('decorations mark exactly the images that have a caption or an alignment', 
     assert.equal(decorationAttrs({ caption: null, align: null }), null)
 })
 
-test('the factory declares a lower-priority inline image shadow with the two new attributes', () => {
+test('the factory returns a WRAPPER extension holding a lower-priority inline image shadow with the two new attributes', () => {
     const make = (kind) => ({ create: (config) => ({ kind, ...config }) })
 
     globalThis.window = {
         FilamentRichEditor: {
             tiptap: {
-                core: { Node: make('node'), mergeAttributes: (...a) => Object.assign({}, ...a) },
+                core: { Extension: make('extension'), Node: make('node'), mergeAttributes: (...a) => Object.assign({}, ...a) },
                 pmState: { Plugin: class {}, PluginKey: class {} },
                 pmView: { Decoration: {}, DecorationSet: {} },
             },
@@ -322,7 +322,14 @@ test('the factory declares a lower-priority inline image shadow with the two new
     }
 
     try {
-        const node = factory()
+        const wrapper = factory()
+
+        // Filament 5.9 REPLACES a built-in extension that a custom module returns under the same
+        // name; only extensions nested in addExtensions() are appended (and merged by TipTap).
+        assert.equal(wrapper.kind, 'extension')
+        assert.notEqual(wrapper.name, 'image')
+
+        const [node] = wrapper.addExtensions()
 
         assert.equal(node.name, 'image')
         assert.equal(node.priority, 50)

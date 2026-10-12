@@ -240,12 +240,12 @@ export const buildDecorations = (doc, { Decoration, DecorationSet }) => {
 }
 
 export default () => {
-    const { Node, mergeAttributes } = window.FilamentRichEditor.tiptap.core
+    const { Extension, Node, mergeAttributes } = window.FilamentRichEditor.tiptap.core
     const { Plugin, PluginKey } = window.FilamentRichEditor.tiptap.pmState
     const { Decoration, DecorationSet } = window.FilamentRichEditor.tiptap.pmView
     const params = paramsOf(import.meta.url)
 
-    return Node.create({
+    const ImageShadow = Node.create({
         name: 'image',
         // Below Filament's 100: the LAST definition of a name wins the schema entry.
         priority: 50,
@@ -287,6 +287,18 @@ export default () => {
                     },
                 }),
             ]
+        },
+    })
+
+    // Wrapped, never returned directly: Filament REPLACES a built-in extension when a custom module
+    // returns one with the same name (its own `image` would be dropped, and with it `src`, `alt`,
+    // `data-id`, the size and the resizable node view: every image would lose its picture). An
+    // extension nested in addExtensions() is only appended, which is what the shadow needs (the
+    // same way custom-attributes.js ships its `listItem`).
+    return Extension.create({
+        name: 'asignuaImageProperties',
+        addExtensions() {
+            return [ImageShadow]
         },
     })
 }

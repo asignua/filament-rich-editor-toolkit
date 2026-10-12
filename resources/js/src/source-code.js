@@ -50,12 +50,19 @@
 // tools that use `disabledWhenNotActive`). Tab is NOT trapped in the textarea (keyboard users
 // could not leave it); the indentation is typed with spaces.
 //
+// A Livewire round trip of the component that holds the editor morphs the wrapper back to the
+// server markup: the active class is stripped (ProseMirror and the textarea would show together)
+// and the toolbar buttons we disabled are reset. While the source is shown, `morph.updated`
+// (livewire-morph.js) puts the class back and disables the locked buttons again (the capture-phase
+// click guard keeps working regardless; the flag is for the look and for assistive technology).
+//
 // Configuration comes from the query string of this module's URL: `css`, `indent`, and the
 // translated strings `t-label` (the textarea's aria-label), `t-notice` and `t-conflict`.
 //
 // IMPORTANT: `window` and `import.meta` are read ONLY inside the default-export factory.
 
 import { ensureStylesheet, paramsOf } from './ui-style.js'
+import { onMorphed, touches } from './livewire-morph.js'
 import { materiallyDiffers, prettyHtml } from './source-html.js'
 
 export const ACTIVE_CLASS = 'asignua-rte-source-active'
@@ -66,7 +73,7 @@ const KEEP = /asignuaToggle(SourceCode|Fullscreen)/
 /**
  * @param {Element} root the field wrapper (.fi-fo-rich-editor)
  * @param {object} editor a TipTap editor (getHTML, commands.setContent, commands.focus, isEditable)
- * @param {{doc?: Document, parseHtml: (html: string) => Document, indent?: number, label?: string, notice?: string, conflict?: string, delay?: number}} options
+ * @param {{doc?: Document, win?: Window, parseHtml: (html: string) => Document, indent?: number, label?: string, notice?: string, conflict?: string, delay?: number}} options
  */
 export const createSourceView = (root, editor, options) => {
     const doc = options.doc || globalThis.document
@@ -85,6 +92,7 @@ export const createSourceView = (root, editor, options) => {
     let locked = []
     let form = null
     let stale = false
+    let offMorph = null
 
     const clearNotice = () => {
         notice?.remove()
@@ -193,6 +201,19 @@ export const createSourceView = (root, editor, options) => {
         toolbar.addEventListener('click', guard, true)
     }
 
+    // Livewire morphed the wrapper (or a part of it): restore the class and the disabled flags.
+    const onMorph = ({ el }) => {
+        if (!active || !touches(root, el)) {
+            return
+        }
+
+        root.classList.add(ACTIVE_CLASS)
+
+        for (const button of locked) {
+            button.disabled = true
+        }
+    }
+
     const unlockToolbar = () => {
         toolbar?.removeEventListener('click', guard, true)
 
@@ -295,6 +316,7 @@ export const createSourceView = (root, editor, options) => {
             host.insertBefore(textarea, main.nextSibling)
             root.classList.add(ACTIVE_CLASS)
             lockToolbar()
+            offMorph = onMorphed(options.win || doc.defaultView, onMorph)
             autosize()
             textarea.focus()
 
@@ -319,6 +341,8 @@ export const createSourceView = (root, editor, options) => {
             textarea.remove()
             textarea = null
             root.classList.remove(ACTIVE_CLASS)
+            offMorph?.()
+            offMorph = null
             unlockToolbar()
 
             // The conflict message was about the box that is gone now.
@@ -350,6 +374,8 @@ export const createSourceView = (root, editor, options) => {
                 textarea?.remove()
                 textarea = null
                 root.classList.remove(ACTIVE_CLASS)
+                offMorph?.()
+                offMorph = null
                 unlockToolbar()
             }
 

@@ -714,3 +714,61 @@ test('the extension refreshes the open source view on a document transaction, no
         delete globalThis.document
     }
 })
+
+// --- Livewire morph ---------------------------------------------------------------------------
+
+const withLivewire = (window) => {
+    const hooks = []
+
+    window.Livewire = {
+        hook(name, callback) {
+            const entry = { name, callback }
+
+            hooks.push(entry)
+
+            return () => hooks.splice(hooks.indexOf(entry), 1)
+        },
+    }
+
+    return { hooks, morph: (el) => hooks.forEach((h) => h.callback({ el })) }
+}
+
+test('a Livewire morph restores the active class and the locked buttons; leaving and destroy unregister', () => {
+    const { window, root, view, doc } = setup()
+    const { hooks, morph } = withLivewire(window)
+
+    view.enter()
+    assert.equal(hooks.length, 1)
+    assert.equal(hooks[0].name, 'morph.updated')
+
+    root.classList.remove(ACTIVE_CLASS)
+    doc.getElementById('bold').disabled = false
+    morph(root)
+
+    assert.ok(root.classList.contains(ACTIVE_CLASS))
+    assert.equal(doc.getElementById('bold').disabled, true)
+    assert.equal(doc.getElementById('source').disabled, false)
+    assert.equal(doc.getElementById('off').disabled, true)
+
+    // A button morphed on its own.
+    doc.getElementById('bold').disabled = false
+    morph(doc.getElementById('bold'))
+    assert.equal(doc.getElementById('bold').disabled, true)
+
+    view.exit()
+    assert.equal(hooks.length, 0)
+    assert.equal(doc.getElementById('bold').disabled, false)
+
+    view.enter()
+    assert.equal(hooks.length, 1)
+    view.destroy()
+    assert.equal(hooks.length, 0)
+})
+
+test('the source view works without Livewire on the page', () => {
+    const { view, root } = setup()
+
+    assert.equal(view.enter(), true)
+    assert.ok(root.classList.contains(ACTIVE_CLASS))
+    assert.equal(view.exit(), true)
+})
