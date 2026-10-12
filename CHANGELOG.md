@@ -2,7 +2,7 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
-## Unreleased
+## v1.1.0 - 2026-10-12
 
 ### Upgrade notes (from 1.0.x)
 
