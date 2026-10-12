@@ -799,6 +799,14 @@ const fixStructure = (body, doc) => {
         unwrap(nested)
     }
 
+    // A heading as the text of a list item: Google Docs writes `<li><h3 role="presentation">` for a
+    // list whose paragraphs use a heading style. A heading cannot open the item in the editor's
+    // schema, so the item got a generic <div> (customDiv) around a heading that is no heading at all
+    // (one per item, in the outline and to screen readers). It becomes the item's paragraph.
+    for (const heading of Array.from(body.querySelectorAll('li > h1, li > h2, li > h3, li > h4, li > h5, li > h6'))) {
+        renameTo(heading, 'p')
+    }
+
     // The shadow listItem has content '(paragraph|customDiv|customDivInline) block*',
     // so a table as the first child would close the <li> early and float up on its own.
     for (const table of Array.from(body.querySelectorAll('li table'))) {

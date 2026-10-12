@@ -952,3 +952,26 @@ test('in-editor paste: an intact wrapper, or anything else, is returned exactly 
     assert.equal(clean(plain), plain)
     assert.equal(clean('<p data-pm-slice="1 1 []"><span class="asignua-rte-figure"></span></p><p>not an image</p>'), '<p data-pm-slice="1 1 []"><span class="asignua-rte-figure"></span></p><p>not an image</p>')
 })
+
+// --- Google Docs: a list whose paragraphs use a heading style ------------------
+// The shape Google Docs really puts on the clipboard (captured from Chrome, 12.10.2026, text shortened):
+// body text in "Heading 3" style, so every list item is `<li><h3 role="presentation">`.
+
+test('Google Docs: a heading inside a list item becomes the item paragraph, headings outside stay', () => {
+    const html =
+        '<meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-9cf900f5">' +
+        '<h3 dir="ltr" style="line-height:1.38;margin-top:12pt"><span style="font-size:13pt;font-weight:700">1. Create Pages</span></h3>' +
+        '<ul style="margin-top:0;margin-bottom:0">' +
+        '<li dir="ltr" aria-level="1" style="list-style-type:disc"><h3 dir="ltr" role="presentation" style="line-height:1.38"><span style="font-size:12pt;font-weight:400">name and photo;</span></h3></li>' +
+        '<li dir="ltr" aria-level="1" style="list-style-type:disc"><h3 dir="ltr" role="presentation" style="line-height:1.38"><span style="font-size:12pt;font-weight:400">areas of expertise;</span></h3></li>' +
+        '</ul></b>'
+
+    const out = clean(html)
+
+    assert.equal(countOf(out, 'li h3, li h1, li h2, li h4, li h5, li h6'), 0, out)
+    assert.equal(countOf(out, 'li > p'), 2, out)
+    assert.equal(countOf(out, 'li div'), 0, out)
+    assert.equal(countOf(out, 'h3'), 1, 'the heading outside the list is the document\'s own')
+    assert.equal(countOf(out, '[role]'), 0, out)
+    assert.equal(textOf(out), '1. Create Pages name and photo; areas of expertise;')
+})
