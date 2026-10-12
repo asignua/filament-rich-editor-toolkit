@@ -10,6 +10,13 @@ All notable changes to `asignua/filament-rich-editor-toolkit` are documented her
 - **Google Docs picture download** (`uploadImages()`, off by default): needs a logged-in user now (set `paste_clean.remote_image_guests` or `authorizeRemoteImages()` to allow guests), goes out without a proxy, and is never decompressed. A wildcard allow-list entry over a public suffix (`*.co.uk`) no longer matches.
 - Run `php artisan filament:assets`: new and changed modules.
 
+### Browser check fixes (v1.1 to v1.4)
+
+- `ImagePropertiesPlugin`: the browser module ships its `image` shadow inside a wrapper extension. Filament 5.9 replaces a built-in extension that a custom module returns under the same name, which dropped Filament's own image node: inserted and loaded images lost `src`, `alt`, `data-id`, the size and the resizable view.
+- The caption and the alignment are visible in the editor on resizable images too (Filament's node view sets an inline `display: inline-flex`).
+- `FullscreenPlugin`: Esc typed inside the editor leaves fullscreen (ProseMirror calls `preventDefault()` on every Esc in a focused editor); an Esc that closes a mention or merge-tag list still does not; the toolbar button is no longer shown as pressed after leaving with Esc.
+- `FullscreenPlugin` and `SourceCodePlugin` re-apply their state after Livewire morphs the field (saving, a refresh, a file upload): before, the page stayed scroll-locked while the editor dropped back into the form, or the editor and the source box were shown at the same time.
+
 ### Review fixes (v1.1 to v1.4)
 
 - `RemoteImageFetcher`: the request ignores `HTTPS_PROXY`/`ALL_PROXY` (with a proxy the DNS pin only fixed the address of the proxy, which resolved the name itself); the response is not decompressed and is written to a capped sink, so a gzip bomb cannot get past the byte cap; a transfer that crosses the cap is aborted at once, by a SHORT write (`fwrite()` returns 0, from a stream wrapper), which libcurl turns into an abort on Guzzle 7 as well as 8 (a failing write would throw in Guzzle 7's write callback, which curl ignores: the download ran to the timeout; measured against an endless chunked body with a 100 KB cap: 15 s before, 0.2 s after); IPv4-translated `::ffff:0:a.b.c.d`, `3fff::/20` and `5f00::/16` are not public. (`CURLOPT_MAXFILESIZE_LARGE` is not used: Guzzle 8 rejects it.)
