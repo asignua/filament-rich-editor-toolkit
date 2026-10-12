@@ -15,8 +15,14 @@ use Tiptap\Utils\HTML;
  *
  * It SHADOWS the stock node (same name, higher priority) instead of replacing the schema:
  * tiptap-php sorts the extensions by priority, renders with the first node of a name and parses
- * with the first matching rule, so this class wins both, while everything it does not touch
- * (`data-id`, `width`/`height`, `loading`) is inherited from {@see ImageExtension}.
+ * with the first matching rule, so this class wins both.
+ *
+ * Everything it does not touch (`data-id`, `width`/`height`, `loading`, a media library's `src`)
+ * comes from the image node the application BOUND for `ImageExtension` (`app(ImageExtension::class)`,
+ * the one point through which Filament creates its node), not from the stock class: a site or a
+ * media manager that rebinds it (resolving `src` from `data-id`, lazy loading, alt from a library)
+ * keeps all of that, and this class only adds the empty alt, the caption and the wrapper on top.
+ * Inheriting the stock class alone silently shadowed such a node.
  *
  * MARKUP. An image with neither caption nor alignment is the stock `<img>`, byte for byte. One
  * with either is
@@ -64,7 +70,7 @@ class ImageProperties extends ImageExtension
     public function parseHTML(): array
     {
         return [
-            ...parent::parseHTML(),
+            ...$this->base()->parseHTML(),
             // Above the span mark, whose rule matches every <span>; nodes win over marks in
             // tiptap-php anyway, the priority is for the day that changes.
             [
@@ -86,7 +92,7 @@ class ImageProperties extends ImageExtension
     public function addAttributes(): array
     {
         return [
-            ...parent::addAttributes(),
+            ...$this->base()->addAttributes(),
             // A MISSING alt and an EMPTY one are different things (the second says "decorative"),
             // and `getAttribute()` returns '' for both.
             'alt' => [
@@ -116,19 +122,12 @@ class ImageProperties extends ImageExtension
         $caption = self::cleanCaption($attrs->caption ?? null);
         $align = self::cleanAlign($attrs->align ?? null);
 
-        // The common case, and the only one before this class existed: the stock output.
+        // The common case, and the only one before this class existed: the bound node's output.
         if ($caption === null && $align === null && $alt !== '') {
-            return parent::renderHTML($node, $HTMLAttributes);
+            return $this->base()->renderHTML($node, $HTMLAttributes);
         }
 
-        $attributes = HTML::mergeAttributes($this->options['HTMLAttributes'], $HTMLAttributes);
-        unset($attributes['alt']);
-
-        if (is_string($alt) && $alt !== '') {
-            $attributes['alt'] = $alt;
-        }
-
-        $img = '<img'.HTML::renderAttributes($attributes).($alt === '' ? ' alt=""' : '').'>';
+        $img = $this->imageMarkup($this->base()->renderHTML($node, $HTMLAttributes), $alt);
 
         if ($caption === null && $align === null) {
             return ['content' => $img];
@@ -139,6 +138,54 @@ class ImageProperties extends ImageExtension
         return ['content' => '<span class="'.$class.'">'.$img
             .($caption === null ? '' : '<span class="'.self::CAPTION_CLASS.'">'.htmlspecialchars($caption, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</span>')
             .'</span>'];
+    }
+
+    /**
+     * The image node the application bound for {@see ImageExtension} (Filament's own unless a
+     * site or a media manager rebinds it); this class when nothing else is bound, to avoid a loop.
+     */
+    private function base(): ImageExtension
+    {
+        $bound = app(ImageExtension::class);
+
+        if ($bound instanceof self) {
+            return new ImageExtension($this->options);
+        }
+
+        return $bound;
+    }
+
+    /**
+     * The `<img>` of the bound node's render spec as markup. The alt is the bound node's (it may
+     * have resolved a better one, e.g. from a media library), except for a decorative image,
+     * which always gets an empty `alt=""` (`HTML::renderAttributes()` drops empty values, and a
+     * library node may have filled in a default).
+     *
+     * @param array<int|string, mixed> $spec
+     */
+    private function imageMarkup(array $spec, mixed $alt): string
+    {
+        if (isset($spec['content']) && is_string($spec['content'])) {
+            // A node that renders by hand: only the decorative alt has to be forced.
+            if ($alt !== '') {
+                return $spec['content'];
+            }
+
+            $withoutAlt = (string) preg_replace('/\salt=("[^"]*"|\'[^\']*\')/', '', $spec['content'], 1);
+
+            return (string) preg_replace('/^<img\b/i', '<img alt=""', $withoutAlt, 1);
+        }
+
+        /** @var array<string, mixed> $attributes */
+        $attributes = isset($spec[1]) && is_array($spec[1]) ? $spec[1] : [];
+
+        if ($alt === '') {
+            unset($attributes['alt']);
+        }
+
+        $tag = isset($spec[0]) && is_string($spec[0]) ? $spec[0] : 'img';
+
+        return '<'.$tag.HTML::renderAttributes($attributes).($alt === '' ? ' alt=""' : '').'>';
     }
 
     public static function cleanAlign(mixed $value): ?string

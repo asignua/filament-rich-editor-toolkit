@@ -13,6 +13,7 @@ All notable changes to `asignua/filament-rich-editor-toolkit` are documented her
 ### Browser check fixes (v1.1 to v1.4)
 
 - `ImagePropertiesPlugin`: the browser module ships its `image` shadow inside a wrapper extension. Filament 5.9 replaces a built-in extension that a custom module returns under the same name, which dropped Filament's own image node: inserted and loaded images lost `src`, `alt`, `data-id`, the size and the resizable view.
+- `ImageProperties` (PHP) renders THROUGH the image node the application bound for Filament's `ImageExtension` (`app(ImageExtension::class)`) instead of the stock class: a media manager or a site that rebinds the node (resolving `src` from `data-id`, lazy loading, a library alt) is no longer shadowed. A decorative image still gets `alt=""` even when that node fills in a default.
 - The caption and the alignment are visible in the editor on resizable images too (Filament's node view sets an inline `display: inline-flex`).
 - `FullscreenPlugin`: Esc typed inside the editor leaves fullscreen (ProseMirror calls `preventDefault()` on every Esc in a focused editor); an Esc that closes a mention or merge-tag list still does not; the toolbar button is no longer shown as pressed after leaving with Esc.
 - `FullscreenPlugin` and `SourceCodePlugin` re-apply their state after Livewire morphs the field (saving, a refresh, a file upload): before, the page stayed scroll-locked while the editor dropped back into the form, or the editor and the source box were shown at the same time.

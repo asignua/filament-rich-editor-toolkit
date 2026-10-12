@@ -11,6 +11,7 @@ use Asignua\RichEditorToolkit\RichEditorToolkit;
 use Asignua\RichEditorToolkit\Tests\TestCase;
 use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
+use Filament\Forms\Components\RichEditor\TipTapExtensions\ImageExtension;
 use Livewire\Livewire;
 use Tiptap\Editor;
 use Workbench\App\Livewire\DemoForm;
@@ -116,6 +117,38 @@ class ImagePropertiesTest extends TestCase
         $this->assertSame('right', $image['attrs']['align']);
         $this->assertSame('k1', $image['attrs']['id']);
         $this->assertArrayNotHasKey('content', $image, 'nothing of the wrapper may leak into the document JSON');
+    }
+
+    public function test_an_image_node_the_application_rebound_is_kept_not_shadowed(): void
+    {
+        // What a media manager / a site does: rebind Filament's image node (src from data-id,
+        // lazy loading, a default alt). The shadow must render THROUGH it, not past it.
+        $this->app->bind(ImageExtension::class, fn (): ImageExtension => new class extends ImageExtension
+        {
+            public function renderHTML($node, $HTMLAttributes = []): array
+            {
+                $HTMLAttributes['src'] = 'https://library.test/'.($node->attrs->id ?? 'x').'.png';
+                $HTMLAttributes['loading'] = 'lazy';
+                $HTMLAttributes['alt'] ??= 'Library alt';
+
+                return parent::renderHTML($node, $HTMLAttributes);
+            }
+        });
+
+        $plain = $this->render('<p><img src="/old.png" data-id="7" alt="A"></p>');
+        $this->assertStringContainsString('src="https://library.test/7.png"', $plain);
+        $this->assertStringContainsString('loading="lazy"', $plain);
+
+        $captioned = $this->render('<p><span class="asignua-rte-figure asignua-rte-align-left"><img src="/old.png" data-id="7" alt="A"><span class="asignua-rte-caption">Cap</span></span></p>');
+        $this->assertStringContainsString('<span class="asignua-rte-figure asignua-rte-align-left"><img', $captioned);
+        $this->assertStringContainsString('src="https://library.test/7.png"', $captioned);
+        $this->assertStringContainsString('loading="lazy"', $captioned);
+        $this->assertStringContainsString('<span class="asignua-rte-caption">Cap</span></span>', $captioned);
+
+        // A decorative image stays decorative even when the bound node fills in a default alt.
+        $decorative = $this->render('<p><img src="/old.png" data-id="7" alt=""></p>');
+        $this->assertMatchesRegularExpression('#<img [^>]*\\balt(=""| ?/>)#', $decorative);
+        $this->assertStringNotContainsString('Library alt', $decorative);
     }
 
     public function test_a_figure_typed_in_the_source_view_is_read_and_rewritten(): void
