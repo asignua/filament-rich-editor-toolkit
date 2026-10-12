@@ -975,3 +975,17 @@ test('Google Docs: a heading inside a list item becomes the item paragraph, head
     assert.equal(countOf(out, '[role]'), 0, out)
     assert.equal(textOf(out), '1. Create Pages name and photo; areas of expertise;')
 })
+
+test('Google Docs: the underline Docs puts on a link is not kept as <u>, a real underline outside links is', () => {
+    const html =
+        '<meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-1">' +
+        '<p dir="ltr"><span style="font-weight:700">Documentation:</span><br>' +
+        '<a href="https://schema.org/Person" style="text-decoration:none;"><span style="font-size:12pt;color:#1155cc;text-decoration:underline;">https://schema.org/Person</span></a> ' +
+        '<span style="text-decoration:underline;">really underlined</span></p></b>'
+
+    const out = clean(html)
+
+    assert.equal(countOf(out, 'a u'), 0, out)
+    assert.equal(countOf(out, 'a[href="https://schema.org/Person"]'), 1, out)
+    assert.equal(countOf(out, 'u'), 1, out)
+})

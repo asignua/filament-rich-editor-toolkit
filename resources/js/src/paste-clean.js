@@ -807,6 +807,13 @@ const fixStructure = (body, doc) => {
         renameTo(heading, 'p')
     }
 
+    // Underline inside a link: Google Docs (and Word) style every link with
+    // `text-decoration: underline`, which the rescue above turns into <u>. A link is underlined
+    // anyway, and the <u> would stay underlined even where the site's CSS removes it from links.
+    for (const underline of Array.from(body.querySelectorAll('a u'))) {
+        unwrap(underline)
+    }
+
     // The shadow listItem has content '(paragraph|customDiv|customDivInline) block*',
     // so a table as the first child would close the <li> early and float up on its own.
     for (const table of Array.from(body.querySelectorAll('li table'))) {
