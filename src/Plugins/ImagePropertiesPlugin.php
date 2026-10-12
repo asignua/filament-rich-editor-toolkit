@@ -137,8 +137,9 @@ class ImagePropertiesPlugin implements RichContentPlugin
                             'center' => Heroicon::OutlinedBars3,
                             'right' => Heroicon::OutlinedBars3BottomRight,
                         ])
-                        ->inline()
-                        ->required(),
+                        // Not required(): "Default" is a choice too, and an empty value means the same
+                        // (cleanAlign() maps it to no alignment), so the asterisk would only mislead.
+                        ->inline(),
                 ])
                 ->action(function (array $arguments, array $data, RichEditor $component): void {
                     $selection = $arguments['editorSelection'] ?? null;
