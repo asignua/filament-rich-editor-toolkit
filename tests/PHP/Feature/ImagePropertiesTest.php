@@ -250,7 +250,8 @@ class ImagePropertiesTest extends TestCase
 
         $html = html_entity_decode(Livewire::test(DemoForm::class)->html(), ENT_QUOTES);
 
-        $this->assertStringContainsString("mountAction('imageProperties', { editorSelection, ...{ alt: ", $html);
+        // Filament 5.9 renders `$wire.mountAction(...)`, 5.10 `mountToolAction(...)`.
+        $this->assertMatchesRegularExpression("/mount(?:Tool)?Action\\('imageProperties', \\{ editorSelection, \\.\\.\\.\\{ alt: /", $html);
 
         foreach (['decorative:', 'caption:', 'align:'] as $key) {
             $this->assertStringContainsString($key, $html);

@@ -2,6 +2,13 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
+## Unreleased
+
+### Fixed
+
+- **Strict paste with Filament 5.10.** Filament 5.10 renders tool buttons as `mountToolAction('name', ...)` instead of `$wire.mountAction('name', ...)`. `paste-strict.js` only recognised the old call, so a field offering only the toolkit's "Link options" / "Image properties" button (which borrow the active state of `link` / `image`) was read as having a Link / Image button, and paste kept links and images it should have stripped. Both spellings are recognised now. Run `php artisan filament:assets` (`paste-clean.js` changed).
+- Tests asserting the toolbar markup accept both spellings.
+
 ## v1.1.0 - 2026-10-12
 
 ### Upgrade notes (from 1.0.x)

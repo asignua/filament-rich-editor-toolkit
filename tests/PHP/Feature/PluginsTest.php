@@ -307,16 +307,16 @@ class PluginsTest extends TestCase
         $image = $find('Image properties');
 
         $this->assertMatchesRegularExpression("/isActive\(\s*['\"]link['\"]/", $stock);
-        $this->assertMatchesRegularExpression("/mountAction\(\s*['\"]link['\"]/", $stock, 'the stock button mounts the action of its own name');
+        $this->assertMatchesRegularExpression("/mount(?:Tool)?Action\(\s*['\"]link['\"]/", $stock, 'the stock button mounts the action of its own name');
 
         $this->assertMatchesRegularExpression("/isActive\(\s*['\"]link['\"]/", $options, 'the borrowed state that fooled strict paste');
-        $this->assertMatchesRegularExpression("/mountAction\(\s*['\"]linkOptions['\"]/", $options);
+        $this->assertMatchesRegularExpression("/mount(?:Tool)?Action\(\s*['\"]linkOptions['\"]/", $options);
 
         $this->assertMatchesRegularExpression("/isActive\(\s*['\"]image['\"]/", $image);
-        $this->assertMatchesRegularExpression("/mountAction\(\s*['\"]imageProperties['\"]/", $image);
+        $this->assertMatchesRegularExpression("/mount(?:Tool)?Action\(\s*['\"]imageProperties['\"]/", $image);
 
         // Directly-run stock tools carry no mountAction, so the rule never touches them.
-        $this->assertDoesNotMatchRegularExpression('/mountAction/', $find('Bold'));
+        $this->assertDoesNotMatchRegularExpression('/mount(?:Tool)?Action/', $find('Bold'));
         $this->assertStringContainsString('x-on:click', $stock, 'the attribute paste-strict.js reads');
     }
 

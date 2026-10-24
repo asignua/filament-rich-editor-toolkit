@@ -166,8 +166,9 @@ export const allowedFromToolbar = (root) => {
             // editor (the rich-links plugin: `isActive('link')` + `mountAction('richLink')`) is a real
             // way to create links, and paste must not strip them from its field. Buttons without a
             // mountAction (bold, lists, table, ...) run a command directly and are unaffected.
+            // Filament 5.10 renders the call as `mountToolAction(name, ...)`, 5.9 as `$wire.mountAction(name, ...)`.
             const mounted = (button.getAttribute('x-on:click') || button.getAttribute('@click') || '').match(
-                /mountAction\(\s*['"]([A-Za-z0-9_-]+)['"]/,
+                /mount(?:Tool)?Action\(\s*['"]([A-Za-z0-9_-]+)['"]/,
             )
 
             for (const call of calls) {

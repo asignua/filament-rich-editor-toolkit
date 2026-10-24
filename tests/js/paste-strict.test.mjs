@@ -240,7 +240,15 @@ const imageProperties = toolButton("'image', []", "$wire.mountAction('imagePrope
 // link editor: `activeJsExpression("$getEditor()?.isActive('link') && [...].some(...)")` and
 // `mountAction('richLink')`. Fixture shaped after RichLinksPlugin::getEditorTools(); the plugin is
 // not installed in this package's dev vendor, so the markup is copied from its source.
+// Filament 5.10 dropped the `$wire.` prefix and renamed the call to `mountToolAction`.
+const stockLink510 = toolButton("'link', []", "mountToolAction('link', { editorSelection, ...{ url: 1 } }, $el)")
+const linkOptions510 = toolButton("'link', []", "mountToolAction('linkOptions', { editorSelection, ...{ newTab: 1 } }, $el)")
 const richLinks = `<button type="button" x-bind:class="{ 'fi-active': editorUpdatedAt &amp;&amp; $getEditor()?.isActive('link') &amp;&amp; JSON.parse('[&quot;/ee-link/&quot;]').some((prefix) =&gt; ($getEditor()?.getAttributes('link')?.href ?? '').startsWith(prefix)) }" x-on:click="$wire.mountAction('richLink', { editorSelection, ...{ url: $getEditor().getAttributes('link')?.href } }, JSON.parse('{}'))"></button>`
+
+test('Filament 5.10 mountToolAction markup: link options still do not count as the Link button', () => {
+    assert.equal(allowedFromToolbar(field(button("'bold', []"), linkOptions510)).has('link'), false)
+    assert.equal(allowedFromToolbar(field(button("'bold', []"), linkOptions510, stockLink510)).has('link'), true)
+})
 
 test('a rich-links button counts as a Link tool (it is a full link editor, not a borrower)', () => {
     assert.equal(allowedFromToolbar(field(button("'bold', []"), richLinks)).has('link'), true)
