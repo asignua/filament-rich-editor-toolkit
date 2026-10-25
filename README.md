@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/packagist/l/asignua/filament-rich-editor-toolkit.svg?style=flat-square)](https://github.com/asignua/filament-rich-editor-toolkit/blob/main/LICENSE.md)
 [![Plumb score](https://plumbphp.dev/badges/asignua/filament-rich-editor-toolkit/composite.svg)](https://plumbphp.dev/asignua/filament-rich-editor-toolkit)
 
-<img class="filament-hidden" src="https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/cover.jpg" alt="Filament Rich Editor Toolkit: ten free plugins for the Filament 5 RichEditor">
+<img class="filament-hidden" src="https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/cover.jpg" alt="Filament Rich Editor Toolkit: ten free plugins for the Filament 5 RichEditor">
 
 Ten free plugins for the [Filament](https://filamentphp.com) 5 `RichEditor` (TipTap) that fix the problems people keep
 reporting in Filament's GitHub Help:
@@ -40,23 +40,23 @@ Each plugin works alone; take only what you need.
 
 ## Screenshots
 
-![Word HTML pasted and cleaned, structure kept](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/paste-clean.jpg)
+![Word HTML pasted and cleaned, structure kept](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/paste-clean.jpg)
 
-![The Image properties dialog: alternative text, decorative switch, caption and alignment](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/image-properties.jpg)
+![The Image properties dialog: alternative text, decorative switch, caption and alignment](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/image-properties.jpg)
 
-![An image with a centered caption in the editor](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/caption.jpg)
+![An image with a centered caption in the editor](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/caption.jpg)
 
-![The Link options dialog: open in a new tab and rel checkboxes](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/link-options.jpg)
+![The Link options dialog: open in a new tab and rel checkboxes](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/link-options.jpg)
 
-![The HTML source view of a short article](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/source-code.jpg)
+![The HTML source view of a short article](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/source-code.jpg)
 
-![The editor in fullscreen with the character and word counter](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/fullscreen.jpg)
+![The editor in fullscreen with the character and word counter](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/fullscreen.jpg)
 
-![The editor in dark mode](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/caption-dark.jpg)
+![The editor in dark mode](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/caption-dark.jpg)
 
-![The Embed dialog accepting a YouTube link](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/embed.jpg)
+![The Embed dialog accepting a YouTube link](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/embed.jpg)
 
-![The toolbar stays visible while scrolling a long document](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.0/art/sticky-toolbar.jpg)
+![The toolbar stays visible while scrolling a long document](https://raw.githubusercontent.com/asignua/filament-rich-editor-toolkit/v1.1.2/art/sticky-toolbar.jpg)
 
 ## Requirements
 

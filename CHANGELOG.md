@@ -2,6 +2,11 @@
 
 All notable changes to `asignua/filament-rich-editor-toolkit` are documented here.
 
+## v1.1.2 - 2026-10-25
+
+- Screenshots and the cover carry the «made in asign» mark; README shows the Stand With Ukraine badge.
+- Dependency updates (CI actions, dev tooling).
+
 ## v1.1.1 - 2026-10-25
 
 ### Fixed
