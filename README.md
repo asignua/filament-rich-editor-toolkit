@@ -638,6 +638,15 @@ npm run test:js        # node --test + jsdom
 npm run build          # recompile resources/dist (commit the result)
 ```
 
+## More plugins by asign
+
+- [Rich Links](https://filamentphp.com/plugins/asign-rich-links) — internal link picker for the rich editor
+- [Image Meta](https://filamentphp.com/plugins/asign-image-meta) — alt text, caption and focal point for uploads
+- [Translation Manager](https://filamentphp.com/plugins/asign-translation-manager) — edit and scan Laravel translations in the panel
+- [Themes](https://filamentphp.com/plugins/asign-themes) — per-user and per-panel colour themes
+
+All plugins: <https://filamentphp.com/plugins?q=asign>
+
 ## Changelog and license
 
 [CHANGELOG](https://github.com/asignua/filament-rich-editor-toolkit/blob/main/CHANGELOG.md) ·
